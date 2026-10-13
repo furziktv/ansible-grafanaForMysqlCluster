@@ -1,0 +1,128 @@
+---
+# Удалить только лишнюю Telegram integration с тем же chat ID.
+# Основная integration mysql_cluster_telegram и notification policies сохраняются.
+- name: Убрать повторную отправку Telegram
+  hosts: monitoring
+  gather_facts: false
+  become: false
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  tasks:
+    - name: Прочитать integrations Grafana
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ grafana_port }}/api/v1/provisioning/contact-points"
+        user: "{{ vault_grafana_admin_user }}"
+        password: "{{ vault_grafana_admin_password }}"
+        force_basic_auth: true
+        return_content: true
+      register: telegram_contacts_before
+      changed_when: false
+      no_log: true
+
+    - name: Выделить Telegram integrations проекта
+      ansible.builtin.set_fact:
+        telegram_project_integrations: >-
+          {{ telegram_contacts_before.json
+             | selectattr('name', 'equalto', 'telegram')
+             | selectattr('type', 'equalto', 'telegram')
+             | list }}
+      no_log: true
+
+    - name: Проверить сохранение основной integration
+      ansible.builtin.assert:
+        that:
+          - telegram_enabled | bool
+          - telegram_project_integrations | length in [1, 2]
+          - >-
+            telegram_project_integrations
+            | selectattr('uid', 'equalto', 'mysql_cluster_telegram')
+            | list | length == 1
+        fail_msg: >-
+          Ожидалась одна или две Telegram integrations в contact point telegram,
+          включая mysql_cluster_telegram. Ничего не удалено; запустите
+          playbooks/notification_audit.yml и проверьте UID.
+
+    - name: Проверить совпадение адресата у обеих integrations
+      ansible.builtin.assert:
+        that:
+          - >-
+            telegram_project_integrations
+            | map(attribute='settings.chatid')
+            | map('string')
+            | unique | list | length == 1
+          - >-
+            telegram_project_integrations[0].settings.chatid | string
+            == vault_telegram_chat_id | string
+          - >-
+            telegram_project_integrations
+            | rejectattr('uid', 'equalto', 'mysql_cluster_telegram')
+            | map(attribute='uid') | list | first | length > 0
+        fail_msg: >-
+          Telegram integrations имеют разные chat ID или не удалось безопасно
+          определить UID дубля. Ничего не удалено.
+      when: telegram_project_integrations | length == 2
+      no_log: true
+
+    - name: Сохранить UID лишней integration
+      ansible.builtin.set_fact:
+        telegram_duplicate_uid: >-
+          {{ telegram_project_integrations
+             | rejectattr('uid', 'equalto', 'mysql_cluster_telegram')
+             | map(attribute='uid') | first }}
+      when: telegram_project_integrations | length == 2
+      no_log: true
+
+    - name: Удалить только лишнюю integration через Grafana API
+      ansible.builtin.uri:
+        url: >-
+          http://{{ ansible_host }}:{{ grafana_port }}/api/v1/provisioning/contact-points/{{ telegram_duplicate_uid }}
+        method: DELETE
+        user: "{{ vault_grafana_admin_user }}"
+        password: "{{ vault_grafana_admin_password }}"
+        force_basic_auth: true
+        # Разные версии Grafana возвращают 202 Accepted или 204 No Content.
+        # Итог всё равно проверяется отдельным GET ниже.
+        status_code: [202, 204]
+      when: telegram_duplicate_uid is defined
+      no_log: true
+
+    - name: Повторно прочитать integrations Grafana
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ grafana_port }}/api/v1/provisioning/contact-points"
+        user: "{{ vault_grafana_admin_user }}"
+        password: "{{ vault_grafana_admin_password }}"
+        force_basic_auth: true
+        return_content: true
+      register: telegram_contacts_after
+      retries: 6
+      delay: 2
+      until: >-
+        telegram_contacts_after.status == 200 and
+        (telegram_contacts_after.json
+         | selectattr('name', 'equalto', 'telegram')
+         | selectattr('type', 'equalto', 'telegram')
+         | list | length == 1)
+      changed_when: false
+      no_log: true
+
+    - name: Подтвердить одну Telegram integration с прежним UID
+      ansible.builtin.assert:
+        that:
+          - >-
+            telegram_contacts_after.json
+            | selectattr('name', 'equalto', 'telegram')
+            | selectattr('type', 'equalto', 'telegram')
+            | list | length == 1
+          - >-
+            telegram_contacts_after.json
+            | selectattr('uid', 'equalto', 'mysql_cluster_telegram')
+            | list | length == 1
+        fail_msg: >-
+          После удаления Grafana не показала ровно одну основную integration.
+          Проверьте Contact points; остальные настройки не менялись.
+
+    - name: Вывести результат
+      ansible.builtin.debug:
+        msg: >-
+          В contact point telegram осталась одна integration
+          mysql_cluster_telegram. Notification policies не изменены.

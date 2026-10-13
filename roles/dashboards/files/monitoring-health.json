@@ -1,0 +1,638 @@
+{
+  "uid": "monitoring-health",
+  "title": "Monitoring Health",
+  "description": "Состояние мониторинга DB1–DB3 без ресурсных показателей Agent.",
+  "tags": [
+    "mysql",
+    "replication",
+    "monitoring"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 40,
+  "version": 2,
+  "refresh": "10s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "01  /  СБОР МЕТРИК",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 2,
+      "title": "Prometheus",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "up{job=\"prometheus\"}",
+          "refId": "A",
+          "legendFormat": "{{server}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "НЕДОСТУПЕН",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "РАБОТАЕТ",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Orchestrator Exporter",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 1,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "up{job=\"orchestrator\"}",
+          "refId": "A",
+          "legendFormat": "{{server}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "НЕДОСТУПЕН",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "РАБОТАЕТ",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 4,
+      "title": "DB exporters UP",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "sum(up{job=~\"mysql|node\",server=~\"db[123]\"})",
+          "refId": "A",
+          "legendFormat": "{{server}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 6
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Шесть exporters: Node и MySQL на каждом DB-узле.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Ошибки scrapes",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 1,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "sum(up{job=~\"mysql|node\",server=~\"db[123]\"} == bool 0)",
+          "refId": "A",
+          "legendFormat": "{{server}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "02  /  УЗЛЫ БАЗ ДАННЫХ",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 7,
+      "title": "MySQL подключения",
+      "type": "table",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 7,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "(mysql_up{server=~\"db[123]\"} or on(instance,job,server) (up{job=\"mysql\",server=~\"db[123]\"} * 0))",
+          "refId": "A",
+          "legendFormat": "{{server}}",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 8,
+      "title": "Node Exporter",
+      "type": "table",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 7,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "up{job=\"node\",server=~\"db[123]\"}",
+          "refId": "A",
+          "legendFormat": "{{server}}",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 9,
+      "title": "MySQL Exporter",
+      "type": "table",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "up{job=\"mysql\",server=~\"db[123]\"}",
+          "refId": "A",
+          "legendFormat": "{{server}}",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 10,
+      "title": "История доступности MySQL",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 15,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "expr": "(mysql_up{server=~\"db[123]\"} or on(instance,job,server) (up{job=\"mysql\",server=~\"db[123]\"} * 0))",
+          "refId": "A",
+          "legendFormat": "{{server}}",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "min": 0,
+          "max": 1,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "row",
+      "title": "03  /  API ORCHESTRATOR",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 12,
+      "title": "Доступность API",
+      "type": "table",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "orchestrator_api_up",
+          "refId": "A",
+          "legendFormat": "{{endpoint}}",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 13,
+      "title": "Ошибки endpoint",
+      "type": "table",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 25,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "orchestrator_endpoint_success == 0",
+          "refId": "A",
+          "legendFormat": "{{endpoint}}",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    }
+  ],
+  "links": [
+    {
+      "title": "Обзор",
+      "type": "link",
+      "url": "/d/cluster-overview",
+      "targetBlank": false
+    },
+    {
+      "title": "Репликация",
+      "type": "link",
+      "url": "/d/replication",
+      "targetBlank": false
+    },
+    {
+      "title": "MySQL",
+      "type": "link",
+      "url": "/d/mysql-performance",
+      "targetBlank": false
+    },
+    {
+      "title": "Инфраструктура",
+      "type": "link",
+      "url": "/d/infrastructure",
+      "targetBlank": false
+    },
+    {
+      "title": "Orchestrator",
+      "type": "link",
+      "url": "/d/orchestrator",
+      "targetBlank": false
+    }
+  ],
+  "templating": {
+    "list": []
+  }
+}

@@ -1,0 +1,77 @@
+---
+# Agent only: speed up monitoring cadence without touching DB containers.
+- import_playbook: notifications.yml
+
+- name: Обновить сбор и отображение метрик на Agent
+  hosts: monitoring
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  roles:
+    - prometheus
+    - dashboards
+  handlers:
+    - name: Restart monitoring Grafana
+      ansible.builtin.command: docker restart monitoring-grafana
+      changed_when: true
+  post_tasks:
+    - name: Применить конфигурацию мониторинга
+      ansible.builtin.meta: flush_handlers
+
+    - name: Дождаться Prometheus
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ prometheus_port }}/-/ready"
+        timeout: 5
+      register: performance_prometheus_ready
+      retries: 12
+      delay: 3
+      until: performance_prometheus_ready.status == 200
+      changed_when: false
+
+    - name: Дождаться Grafana
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ grafana_port }}/api/health"
+        timeout: 5
+      register: performance_grafana_ready
+      retries: 12
+      delay: 3
+      until: performance_grafana_ready.status == 200
+      changed_when: false
+
+    - name: Проверить применённый интервал Prometheus
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ prometheus_port }}/api/v1/status/config"
+        return_content: true
+      register: performance_prometheus_config
+      changed_when: false
+
+    - name: Проверить обновление дашборда в Grafana
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ grafana_port }}/api/dashboards/uid/cluster-overview"
+        user: "{{ vault_grafana_admin_user }}"
+        password: "{{ vault_grafana_admin_password }}"
+        force_basic_auth: true
+        return_content: true
+      register: performance_dashboard
+      changed_when: false
+      no_log: true
+
+    - name: Подтвердить новые интервалы
+      ansible.builtin.assert:
+        that:
+          - "'scrape_interval: 10s' in performance_prometheus_config.json.data.yaml"
+          - "'scrape_interval: 15s' in performance_prometheus_config.json.data.yaml"
+          - performance_dashboard.json.dashboard.refresh == '10s'
+        fail_msg: >-
+          Prometheus или Grafana ещё не применили новые интервалы.
+          Проверьте состояние только monitoring контейнеров Agent.
+
+    - name: Показать итог без секретов
+      ansible.builtin.debug:
+        msg:
+          prometheus: "{{ performance_prometheus_ready.status }}"
+          grafana: "{{ performance_grafana_ready.status }}"
+          mysql_node_scrape: 10s
+          orchestrator_scrape: 15s
+          dashboard_refresh: "{{ performance_dashboard.json.dashboard.refresh }}"

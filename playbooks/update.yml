@@ -1,0 +1,47 @@
+---
+# Обновляет только отдельные monitoring Compose проекты. Версии образов меняют в all.yml.
+- name: Получить пароль sudo Agent
+  hosts: monitoring
+  gather_facts: false
+  become: false
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  roles:
+    - agent_privilege
+
+- name: Проверить окружение
+  hosts: all
+  gather_facts: false
+  any_errors_fatal: true
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  tasks:
+    - name: Проверить окружение
+      ansible.builtin.import_role:
+        name: preflight
+      become: true
+- name: Обновить exporters
+  hosts: mysql_nodes
+  gather_facts: false
+  become: true
+  serial: 1
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  roles:
+    - node_exporter
+    - mysql_exporter
+- name: Обновить Agent
+  hosts: monitoring
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  roles:
+    - node_exporter
+    - orchestrator_exporter
+    - prometheus
+    - telegram_vless
+    - grafana
+    - dashboards
+    - alerting
+    - validation

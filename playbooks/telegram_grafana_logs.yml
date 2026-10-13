@@ -1,0 +1,51 @@
+---
+# Только чтение последних ошибок Grafana. Секреты и полные строки журнала скрыты.
+- name: Получить пароль sudo Agent
+  hosts: monitoring
+  gather_facts: false
+  become: false
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  roles:
+    - agent_privilege
+
+- name: Найти причину HTTP 400 в журнале Grafana
+  hosts: monitoring
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  tasks:
+    - name: Прочитать последние ошибки Grafana
+      ansible.builtin.command:
+        argv:
+          - docker
+          - logs
+          - --since
+          - 30m
+          - --tail
+          - '500'
+          - monitoring-grafana
+      register: grafana_telegram_logs
+      changed_when: false
+      no_log: true
+
+    - name: Выделить безопасные причины ошибок Telegram и Grafana
+      ansible.builtin.set_fact:
+        grafana_telegram_error_report: >-
+          {{ (grafana_telegram_logs.stdout_lines + grafana_telegram_logs.stderr_lines)
+             | grafana_telegram_log_report }}
+      no_log: true
+
+    - name: Показать безопасные причины HTTP 400
+      ansible.builtin.debug:
+        msg: "{{ grafana_telegram_error_report }}"
+
+    - name: Сообщить об отсутствии подходящей записи
+      ansible.builtin.debug:
+        msg: >-
+          За последние 30 минут Grafana не записала ошибку отправки Telegram.
+          Повторите тест в интерфейсе и сразу запустите этот playbook.
+          Если причина «подробность не записана», для точного ответа
+          требуется отдельная безопасная проверка содержимого отправки.
+      when: grafana_telegram_error_report | length == 0

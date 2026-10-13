@@ -1,0 +1,73 @@
+---
+- name: Проверить наличие Docker CLI на Agent
+  ansible.builtin.shell: command -v docker
+  register: agent_docker_cli
+  changed_when: false
+  failed_when: false
+  become: false
+
+- name: Сообщить о необходимости разрешения установки Docker
+  ansible.builtin.assert:
+    that:
+      - monitoring_install_docker_on_agent | bool
+    fail_msg: >-
+      На Agent 10.100.0.4 отсутствует Docker CLI. Установка Docker может менять сетевые
+      правила хоста, поэтому она не выполняется без явного разрешения. Если Agent
+      выделен для мониторинга и на нём нет другого container runtime, повторите
+      site.yml с -e monitoring_install_docker_on_agent=true. Существующие сервисы
+      DB1-DB3 этот шаг не затрагивает.
+  when: agent_docker_cli.rc != 0
+
+- name: Проверить ОС перед установкой Docker на Agent
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution'] == 'Ubuntu'
+      - ansible_facts['distribution_version'] is version('24.04', '>=')
+    fail_msg: >-
+      Автоматическая установка Docker предусмотрена только для Ubuntu 24.04 и новее.
+      Подготовьте Docker Engine и Compose plugin на Agent вручную.
+  when: agent_docker_cli.rc != 0
+
+- name: Найти признаки существующего container runtime на Agent
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /run/docker.sock
+    - /var/lib/docker
+    - /var/snap/docker
+    - /var/lib/containers
+    - /usr/bin/dockerd
+    - /usr/local/bin/dockerd
+    - /usr/bin/containerd
+    - /run/containerd/containerd.sock
+    - /usr/bin/podman
+  register: agent_runtime_paths
+  when: agent_docker_cli.rc != 0
+
+- name: Остановиться при следах существующих контейнеров или runtime
+  ansible.builtin.assert:
+    that:
+      - agent_runtime_paths.results | selectattr('stat.exists') | list | length == 0
+    fail_msg: >-
+      На Agent обнаружены файлы или данные существующего container runtime.
+      Автоматическая установка Docker остановлена во избежание влияния на контейнеры.
+      Проверьте Agent вручную; этот playbook не удаляет и не меняет найденное.
+  when: agent_docker_cli.rc != 0
+
+- name: Установить Docker и Compose из пакетов Ubuntu только на пустой Agent
+  ansible.builtin.apt:
+    name:
+      - docker.io
+      - docker-compose-v2
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: agent_docker_cli.rc != 0
+
+- name: Проверить работу установленного Docker Engine
+  ansible.builtin.command: docker version --format '{{ '{{' }}.Server.Version{{ '}}' }}'
+  changed_when: false
+
+- name: Проверить Docker Compose plugin на Agent
+  ansible.builtin.command: docker compose version --short
+  changed_when: false

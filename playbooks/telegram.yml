@@ -1,0 +1,78 @@
+---
+# Изолированное обновление Telegram/VLESS на Agent без обращения к DB1-DB3.
+- name: Получить пароль sudo Agent
+  hosts: monitoring
+  gather_facts: false
+  become: false
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  roles:
+    - agent_privilege
+
+- name: Обновить Telegram через VLESS только на Agent
+  hosts: monitoring
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  pre_tasks:
+    - name: Проверить включение Telegram и наличие секретов
+      ansible.builtin.assert:
+        that:
+          - telegram_enabled | bool
+          - telegram_vless_enabled | bool
+          - vault_telegram_bot_token | default('') | length > 0
+          - vault_telegram_chat_id | default('') | length > 0
+          - vault_telegram_vless_uri | default('') | length > 0
+        fail_msg: >-
+          Включите telegram_enabled и telegram_vless_enabled в all.yml;
+          заполните vault_telegram_bot_token, vault_telegram_chat_id и
+          vault_telegram_vless_uri в зашифрованном Vault.
+    - name: Проверить Docker на Agent
+      ansible.builtin.command: docker version
+      changed_when: false
+    - name: Проверить Compose на Agent
+      ansible.builtin.command: docker compose version
+      changed_when: false
+  roles:
+    - telegram_vless
+    - grafana
+    - alerting
+  post_tasks:
+    - name: Применить provisioning Grafana
+      ansible.builtin.meta: flush_handlers
+    - name: Дождаться Grafana
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ grafana_port }}/api/health"
+        timeout: 5
+      register: telegram_grafana_health
+      retries: 12
+      delay: 5
+      until: telegram_grafana_health.status == 200
+      changed_when: false
+    - name: Проверить Telegram contact point
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ grafana_port }}/api/v1/provisioning/contact-points"
+        user: "{{ vault_grafana_admin_user }}"
+        password: "{{ vault_grafana_admin_password }}"
+        force_basic_auth: true
+        return_content: true
+      register: telegram_contact_points
+      changed_when: false
+      no_log: true
+    - name: Подтвердить Telegram contact point
+      ansible.builtin.assert:
+        that:
+          - telegram_contact_points.status == 200
+          - >-
+            telegram_contact_points.json | selectattr('uid', 'equalto',
+            'mysql_cluster_telegram') | list | length == 1
+        fail_msg: >-
+          Grafana не создала Telegram contact point. Проверьте
+          docker logs monitoring-grafana и provisioning/alerting/telegram.yml на Agent.
+    - name: Вывести результат настройки Telegram
+      ansible.builtin.debug:
+        msg: >-
+          Xray запущен, HTTPS к api.telegram.org проверен через VLESS,
+          Grafana доступна, Telegram contact point создан.
+          Проверка доставки сообщения выполняется кнопкой Test в Grafana.

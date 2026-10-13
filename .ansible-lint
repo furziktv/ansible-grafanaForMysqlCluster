@@ -1,0 +1,6 @@
+profile: basic
+skip_list:
+  # Отдельный скрытый запрос sudo Agent нужен только при отсутствии Vault-поля.
+  - no-prompting
+exclude_paths:
+  - inventory/group_vars/vault.example.yml

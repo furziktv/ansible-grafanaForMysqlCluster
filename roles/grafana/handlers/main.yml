@@ -1,0 +1,4 @@
+---
+- name: Restart monitoring Grafana
+  ansible.builtin.command: docker restart monitoring-grafana
+  changed_when: true

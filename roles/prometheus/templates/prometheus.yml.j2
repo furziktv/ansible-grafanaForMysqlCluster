@@ -1,0 +1,23 @@
+global:
+  scrape_interval: {{ monitoring_scrape_interval }}
+  evaluation_interval: {{ monitoring_scrape_interval }}
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['{{ hostvars[groups['monitoring'][0]].ansible_host }}:{{ prometheus_port }}']
+  - job_name: node
+    static_configs:
+{% for host in groups['mysql_nodes'] + groups['monitoring'] %}
+      - targets: ['{{ hostvars[host].ansible_host }}:{{ node_exporter_port }}']
+        labels: {server: '{{ host }}'}
+{% endfor %}
+  - job_name: mysql
+    static_configs:
+{% for host in groups['mysql_nodes'] %}
+      - targets: ['{{ hostvars[host].ansible_host }}:{{ mysql_exporter_port }}']
+        labels: {server: '{{ host }}'}
+{% endfor %}
+  - job_name: orchestrator
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['{{ hostvars[groups['monitoring'][0]].ansible_host }}:{{ orchestrator_exporter_port }}']

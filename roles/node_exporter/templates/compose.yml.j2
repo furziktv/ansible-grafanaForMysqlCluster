@@ -1,0 +1,25 @@
+services:
+  node-exporter:
+    image: {{ monitoring_images.node }}
+    container_name: monitoring-node-exporter
+    restart: unless-stopped
+    network_mode: host
+    read_only: true
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro,rslave
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host/root
+      - --web.listen-address={{ monitoring_bind_address }}:{{ node_exporter_port }}
+      - --collector.disable-defaults
+      - --collector.cpu
+      - --collector.meminfo
+      - --collector.filesystem
+      - --collector.diskstats
+      - --collector.netdev
+      - --collector.stat
+      - --collector.time
+      - --collector.uname

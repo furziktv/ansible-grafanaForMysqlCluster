@@ -1,0 +1,61 @@
+---
+- name: Запросить отдельный пароль sudo Agent, если он не задан в Vault
+  ansible.builtin.pause:
+    prompt: 'Введите пароль sudo пользователя {{ ansible_user }} на Agent 10.100.0.4'
+    echo: false
+  register: agent_sudo_prompt
+  when: vault_agent_become_password | default('') | length == 0 or vault_agent_become_password | default('') == 'CHANGE_ME'
+  no_log: true
+- name: Использовать пароль sudo Agent из Vault
+  ansible.builtin.set_fact:
+    ansible_become_password: "{{ vault_agent_become_password }}"
+  when:
+    - vault_agent_become_password | default('') | length > 0
+    - vault_agent_become_password | default('') != 'CHANGE_ME'
+  no_log: true
+- name: Использовать введённый пароль sudo Agent только в этом запуске
+  ansible.builtin.set_fact:
+    ansible_become_password: "{{ agent_sudo_prompt.user_input }}"
+  when: agent_sudo_prompt is not skipped
+  no_log: true
+- name: Проверить наличие пароля sudo Agent
+  ansible.builtin.assert:
+    that:
+      - ansible_become_password | default('') | length > 0
+    fail_msg: 'Пароль sudo Agent не задан. Введите его в отдельном запросе или сохраните vault_agent_become_password в Vault.'
+- name: Проверить пароль sudo Agent напрямую
+  ansible.builtin.command:
+    argv:
+      - sudo
+      - -S
+      - -k
+      - -p
+      - ''
+      - id
+      - -u
+    stdin: "{{ ansible_become_password }}"
+    stdin_add_newline: true
+  register: agent_sudo_direct
+  changed_when: false
+  failed_when: false
+  become: false
+  no_log: true
+- name: Подтвердить пароль sudo Agent
+  ansible.builtin.assert:
+    that:
+      - agent_sudo_direct.rc == 0
+      - agent_sudo_direct.stdout == '0'
+    fail_msg: >-
+      {% set error = agent_sudo_direct.stderr | default('') | lower %}
+      {% if 'sorry, try again' in error or 'incorrect password' in error %}
+      sudo Agent отверг введённый пароль пользователя {{ ansible_user }}.
+      {% elif 'terminal is required' in error or 'must have a tty' in error %}
+      Политика sudo требует терминал для Agent.
+      {% elif 'not in the sudoers' in error or 'not allowed to execute' in error %}
+      Пользователь {{ ansible_user }} не имеет необходимых прав sudo на Agent.
+      {% else %}
+      Проверка sudo Agent завершилась с кодом {{ agent_sudo_direct.rc }}.
+      {% endif %}
+      На 10.100.0.4 под пользователем {{ ansible_user }} выполните sudo -k && sudo -v
+      и проверьте результат. Пароль не передавайте в чат.
+  become: false

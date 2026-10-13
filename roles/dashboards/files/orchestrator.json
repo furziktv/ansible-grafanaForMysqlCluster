@@ -1,0 +1,765 @@
+{
+  "uid": "orchestrator",
+  "title": "Orchestrator",
+  "description": "API, топология, проблемы и история восстановления.",
+  "tags": [
+    "mysql",
+    "replication",
+    "monitoring"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 40,
+  "version": 2,
+  "refresh": "10s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "01  /  API И РОЛЬ КЛАСТЕРА",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 2,
+      "title": "Текущий Primary",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "((mysql_global_variables_read_only{server=~\"db[123]\"} == 0) and on(server) (mysql_up{server=~\"db[123]\"} == 1) and on(server) (up{job=\"mysql\",server=~\"db[123]\"} == 1)) and on() (count((mysql_global_variables_read_only{server=~\"db[123]\"} == 0) and on(server) (mysql_up{server=~\"db[123]\"} == 1) and on(server) (up{job=\"mysql\",server=~\"db[123]\"} == 1)) == 1)",
+          "refId": "A",
+          "legendFormat": "{{server}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "name",
+        "colorMode": "none",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 3,
+      "title": "API доступны",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 1,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "sum(orchestrator_api_up)",
+          "refId": "A",
+          "legendFormat": "{{server}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "green",
+                "value": 3
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Recoveries",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 1,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "orchestrator_recoveries_enabled",
+          "refId": "A",
+          "legendFormat": "{{server}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "ОТКЛЮЧЕНЫ",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "ВКЛЮЧЕНЫ",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Доступность API по узлам",
+      "type": "table",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "orchestrator_api_up",
+          "refId": "A",
+          "legendFormat": "{{endpoint}}",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 6,
+      "title": "Совместимость API",
+      "type": "table",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 6,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "orchestrator_endpoint_success",
+          "refId": "A",
+          "legendFormat": "{{endpoint}}",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 7,
+      "type": "row",
+      "title": "02  /  ТОПОЛОГИЯ И ПРОБЛЕМЫ",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 8,
+      "title": "Топология",
+      "type": "table",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "orchestrator_instance_info",
+          "refId": "A",
+          "legendFormat": "{{server}}",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 9,
+      "title": "Недоступные инстансы",
+      "type": "table",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "orchestrator_instance_healthy == 0",
+          "refId": "A",
+          "legendFormat": "{{server}}",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 10,
+      "title": "Replication Analysis",
+      "type": "table",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 23,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "orchestrator_analysis",
+          "refId": "A",
+          "legendFormat": "{{server}}",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 11,
+      "title": "Проблемы репликации",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 12,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "orchestrator_replication_problems",
+          "refId": "A",
+          "legendFormat": "{{server}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 12,
+      "title": "Проблемы узлов",
+      "type": "table",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 31,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "orchestrator_instance_problems",
+          "refId": "A",
+          "legendFormat": "{{server}}",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 13,
+      "type": "row",
+      "title": "03  /  ИСТОРИЯ RECOVERY",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 14,
+      "title": "Failover событий",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "orchestrator_failover_history_count",
+          "refId": "A",
+          "legendFormat": "{{server}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 15,
+      "title": "Recovery событий",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 40,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "orchestrator_recovery_history_count",
+          "refId": "A",
+          "legendFormat": "{{server}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 16,
+      "title": "Последний failover",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 40,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "orchestrator_last_failover_timestamp_seconds * 1000",
+          "refId": "A",
+          "legendFormat": "{{server}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeAsIso",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "НЕТ СОБЫТИЙ"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 17,
+      "title": "История recovery",
+      "type": "table",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 45,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "orchestrator_recovery_event_timestamp_seconds",
+          "refId": "A",
+          "legendFormat": "{{server}}",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "НЕТ ДАННЫХ",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    }
+  ],
+  "links": [
+    {
+      "title": "Обзор",
+      "type": "link",
+      "url": "/d/cluster-overview",
+      "targetBlank": false
+    },
+    {
+      "title": "Репликация",
+      "type": "link",
+      "url": "/d/replication",
+      "targetBlank": false
+    },
+    {
+      "title": "MySQL",
+      "type": "link",
+      "url": "/d/mysql-performance",
+      "targetBlank": false
+    },
+    {
+      "title": "Инфраструктура",
+      "type": "link",
+      "url": "/d/infrastructure",
+      "targetBlank": false
+    },
+    {
+      "title": "Мониторинг",
+      "type": "link",
+      "url": "/d/monitoring-health",
+      "targetBlank": false
+    }
+  ],
+  "templating": {
+    "list": []
+  }
+}

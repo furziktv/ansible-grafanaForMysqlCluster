@@ -1,0 +1,4 @@
+---
+- name: Restart monitoring MySQL Exporter
+  ansible.builtin.command: docker restart monitoring-mysql-exporter
+  changed_when: true

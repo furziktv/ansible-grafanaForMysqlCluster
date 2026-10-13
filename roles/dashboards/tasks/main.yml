@@ -1,0 +1,20 @@
+---
+- name: Разместить provider дашбордов и папку
+  ansible.builtin.template:
+    src: provider.yml.j2
+    dest: "{{ monitoring_root }}/agent/grafana/provisioning/dashboards/mysql-cluster.yml"
+    mode: '0644'
+  notify: Restart monitoring Grafana
+- name: Разместить шесть дашбордов
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ monitoring_root }}/agent/grafana/dashboards/{{ item }}"
+    mode: '0644'
+  loop:
+    - cluster-overview.json
+    - replication.json
+    - mysql-performance.json
+    - infrastructure.json
+    - orchestrator.json
+    - monitoring-health.json
+  notify: Restart monitoring Grafana

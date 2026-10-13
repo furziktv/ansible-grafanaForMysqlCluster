@@ -1,0 +1,216 @@
+---
+# Обновить текст уведомлений у существующего Telegram contact point.
+- name: Получить пароль sudo Agent
+  hosts: monitoring
+  gather_facts: false
+  become: false
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  roles:
+    - agent_privilege
+
+- name: Обновить сообщения Telegram без создания нового контакта
+  hosts: monitoring
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  pre_tasks:
+    - name: Получить существующие contact points Grafana
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ grafana_port }}/api/v1/provisioning/contact-points"
+        user: "{{ vault_grafana_admin_user }}"
+        password: "{{ vault_grafana_admin_password }}"
+        force_basic_auth: true
+        return_content: true
+      register: contacts_before
+      changed_when: false
+      no_log: true
+    - name: Убедиться, что Telegram contact point уже существует
+      ansible.builtin.assert:
+        that:
+          - telegram_enabled | bool
+          - contacts_before.status == 200
+          - >-
+            contacts_before.json | selectattr('uid', 'equalto',
+            'mysql_cluster_telegram') | list | length == 1
+          - >-
+            contacts_before.json
+            | selectattr('name', 'equalto', 'telegram')
+            | selectattr('type', 'equalto', 'telegram')
+            | list | length == 1
+        fail_msg: >-
+          В contact point telegram должна быть ровно одна Telegram integration
+          с UID mysql_cluster_telegram. При дубле сначала запустите
+          playbooks/telegram_dedupe.yml; новый контакт этот playbook не создаёт.
+
+    - name: Подготовить новый шаблон Telegram без изменения контакта
+      ansible.builtin.set_fact:
+        notifications_candidate_message: >-
+          {{ ((lookup('ansible.builtin.template',
+              playbook_dir ~ '/../roles/alerting/templates/telegram.yml.j2')
+              | from_yaml).contactPoints[0].receivers[0].settings.message) }}
+      no_log: true
+
+    - name: Проверить новый шаблон в Grafana до применения
+      ansible.builtin.uri:
+        url: >-
+          http://{{ ansible_host }}:{{ grafana_port }}/api/alertmanager/grafana/config/api/v1/templates/test
+        method: POST
+        user: "{{ vault_grafana_admin_user }}"
+        password: "{{ vault_grafana_admin_password }}"
+        force_basic_auth: true
+        body_format: json
+        body:
+          name: telegram-candidate
+          template: >-
+            {{ '{{ define "telegram-candidate" }}' ~
+               notifications_candidate_message ~ '{{ end }}' }}
+          alerts:
+            - labels:
+                alertname: Diagnostic
+                severity: warning
+                server: db1
+              annotations:
+                summary: Проверка шаблона
+        return_content: true
+        status_code: [200, 400]
+        timeout: 10
+      register: notifications_candidate_result
+      changed_when: false
+      no_log: true
+
+    - name: Показать безопасную ошибку нового шаблона
+      ansible.builtin.debug:
+        msg:
+          http: "{{ notifications_candidate_result.status }}"
+          errors: >-
+            {{ (notifications_candidate_result.json.errors | default([])) |
+               map(attribute='message') |
+               map('replace', vault_telegram_bot_token, '[скрыто]') |
+               map('replace', vault_telegram_chat_id | string, '[скрыто]') |
+               list }}
+      when: >-
+        notifications_candidate_result.status != 200 or
+        notifications_candidate_result.json.errors | default([]) | length > 0
+
+    - name: Подтвердить непустой текст нового шаблона
+      ansible.builtin.assert:
+        that:
+          - notifications_candidate_result.status == 200
+          - notifications_candidate_result.json.errors | default([]) | length == 0
+          - >-
+            notifications_candidate_result.json.results | default([]) |
+            map(attribute='text') | map('trim') |
+            reject('equalto', '') | list | length > 0
+        fail_msg: >-
+          Grafana не смогла выполнить новый шаблон. Контакт ещё не изменён;
+          проверьте синтаксис шаблона перед повтором.
+  roles:
+    - alerting
+  post_tasks:
+    - name: Применить обновлённый текст уведомлений
+      ansible.builtin.meta: flush_handlers
+    - name: Применить файлы после прерванного предыдущего запуска
+      ansible.builtin.command: docker restart monitoring-grafana
+      changed_when: true
+      when:
+        - not (alerting_rules_file.changed | default(false))
+        - not (alerting_telegram_file.changed | default(false))
+    - name: Дождаться Grafana
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ grafana_port }}/api/health"
+        timeout: 5
+      register: notifications_grafana_health
+      retries: 12
+      delay: 5
+      until: notifications_grafana_health.status == 200
+      changed_when: false
+    - name: Проверить contact points после обновления
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ grafana_port }}/api/v1/provisioning/contact-points"
+        user: "{{ vault_grafana_admin_user }}"
+        password: "{{ vault_grafana_admin_password }}"
+        force_basic_auth: true
+        return_content: true
+      register: contacts_after
+      changed_when: false
+      no_log: true
+    - name: Проверить применённую notification policy
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ grafana_port }}/api/v1/provisioning/policies"
+        user: "{{ vault_grafana_admin_user }}"
+        password: "{{ vault_grafana_admin_password }}"
+        force_basic_auth: true
+        return_content: true
+      register: notifications_policy_after
+      changed_when: false
+      no_log: true
+    - name: Проверить применённые alert rules
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ grafana_port }}/api/v1/provisioning/alert-rules"
+        user: "{{ vault_grafana_admin_user }}"
+        password: "{{ vault_grafana_admin_password }}"
+        force_basic_auth: true
+        return_content: true
+      register: notifications_rules_after
+      changed_when: false
+      no_log: true
+    - name: Подтвердить отсутствие нового контакта
+      ansible.builtin.assert:
+        that:
+          - contacts_after.json | length == contacts_before.json | length
+          - >-
+            contacts_after.json | selectattr('uid', 'equalto',
+            'mysql_cluster_telegram') | list | length == 1
+          - >-
+            contacts_after.json
+            | selectattr('name', 'equalto', 'telegram')
+            | selectattr('type', 'equalto', 'telegram')
+            | list | length == 1
+          - >-
+            'current_value' in
+            (contacts_after.json
+             | selectattr('uid', 'equalto', 'mysql_cluster_telegram')
+             | first).settings.message
+          - >-
+            (contacts_after.json
+             | selectattr('uid', 'equalto', 'mysql_cluster_telegram')
+             | first).settings.parse_mode | default('') in ['None', '']
+          - notifications_policy_after.json.group_by == ['...']
+          - notifications_policy_after.json.group_wait == '0s'
+          - notifications_policy_after.json.group_interval == '5s'
+          - >-
+            notifications_rules_after.json
+            | selectattr('uid', 'equalto', 'cpu_high')
+            | map(attribute='noDataState') | first == 'NoData'
+          - >-
+            'node_cpu_seconds_total' in
+            (notifications_rules_after.json
+             | selectattr('uid', 'equalto', 'cpu_high')
+             | first).data[0].model.expr
+          - >-
+            ' > bool 85' not in
+            (notifications_rules_after.json
+             | selectattr('uid', 'equalto', 'cpu_high')
+             | first).data[0].model.expr
+        fail_msg: >-
+          Grafana не подтвердила одну Telegram integration, новый шаблон,
+          раздельную маршрутизацию или обновлённые правила. Проверьте
+          playbooks/notification_audit.yml перед повторной отправкой.
+    - name: Подтвердить выдержку всех правил в Grafana
+      ansible.builtin.assert:
+        that:
+          - >-
+            (notifications_rules_after.json
+             | selectattr('uid', 'equalto', item)
+             | first)['for'] == '5s'
+        fail_msg: >-
+          Grafana не применила выдержку 5 секунд для {{ item }}.
+      loop: >-
+        {{ (lookup('ansible.builtin.file',
+                   playbook_dir ~ '/../roles/alerting/files/alerts.json')
+            | from_json).groups[0].rules | map(attribute='uid') | list }}
+    - name: Сообщить об обновлении текста
+      ansible.builtin.debug:
+        msg: 'Все 15 правил имеют выдержку 5 секунд; Telegram contact point сохранён с прежним UID.'

@@ -1,0 +1,154 @@
+---
+# Проверить отправку из Grafana с явными секретами Vault; contact point не меняется.
+- name: Получить пароль sudo Agent
+  hosts: monitoring
+  gather_facts: false
+  become: false
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  roles:
+    - agent_privilege
+
+- name: Проверить путь Grafana к Telegram
+  hosts: monitoring
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  tasks:
+    - name: Проверить значения параметров диагностики
+      ansible.builtin.assert:
+        that:
+          - >-
+            telegram_diagnostic_use_stored_credentials | default(false) |
+            string | lower in ['true', 'false']
+          - >-
+            telegram_diagnostic_use_active_template | default(false) |
+            string | lower in ['true', 'false']
+        fail_msg: >-
+          Используйте точное значение true или false для
+          telegram_diagnostic_use_stored_credentials и
+          telegram_diagnostic_use_active_template. Например:
+          -e telegram_diagnostic_use_stored_credentials=true
+
+    - name: Прочитать существующий Telegram contact point
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ grafana_port }}/api/v1/provisioning/contact-points"
+        user: "{{ vault_grafana_admin_user }}"
+        password: "{{ vault_grafana_admin_password }}"
+        force_basic_auth: true
+        return_content: true
+      register: grafana_diagnostic_contacts
+      changed_when: false
+      no_log: true
+
+    - name: Проверить UID и Chat ID существующего контакта
+      ansible.builtin.assert:
+        that:
+          - >-
+            grafana_diagnostic_contacts.json |
+            selectattr('uid', 'equalto', 'mysql_cluster_telegram') |
+            list | length == 1
+          - >-
+            (grafana_diagnostic_contacts.json |
+            selectattr('uid', 'equalto', 'mysql_cluster_telegram') |
+            first).settings.chatid | string == vault_telegram_chat_id | string
+        fail_msg: >-
+          Существующий Telegram contact point отсутствует или его Chat ID
+          отличается от Vault. Проверьте provisioning без создания нового контакта.
+
+    - name: Сохранить настройки существующего контакта для теста
+      ansible.builtin.set_fact:
+        grafana_diagnostic_contact: >-
+          {{ grafana_diagnostic_contacts.json |
+             selectattr('uid', 'equalto', 'mysql_cluster_telegram') | first }}
+      no_log: true
+
+    - name: Прочитать окружение запущенного контейнера Grafana
+      ansible.builtin.command:
+        argv:
+          - docker
+          - inspect
+          - monitoring-grafana
+      register: grafana_diagnostic_inspect
+      changed_when: false
+      no_log: true
+
+    - name: Подтвердить прокси в запущенной Grafana
+      ansible.builtin.assert:
+        that:
+          - >-
+            'HTTPS_PROXY=http://telegram-vless:18080' in
+            (grafana_diagnostic_inspect.stdout | from_json)[0].Config.Env
+        fail_msg: >-
+          В запущенном контейнере Grafana нет HTTPS_PROXY для VLESS.
+          Примените playbooks/telegram.yml, затем повторите проверку.
+
+    - name: Отправить одно короткое сообщение через тестовый API Grafana
+      ansible.builtin.uri:
+        url: >-
+          http://{{ ansible_host }}:{{ grafana_port }}/api/alertmanager/grafana/config/api/v1/receivers/test
+        method: POST
+        user: "{{ vault_grafana_admin_user }}"
+        password: "{{ vault_grafana_admin_password }}"
+        force_basic_auth: true
+        body_format: json
+        body:
+          receivers:
+            - name: telegram
+              grafana_managed_receiver_configs:
+                - uid: mysql_cluster_telegram
+                  name: telegram
+                  type: telegram
+                  disableResolveMessage: false
+                  settings: >-
+                    {{ {'chatid': vault_telegram_chat_id | string,
+                        'parse_mode': 'None',
+                        'message': grafana_diagnostic_contact.settings.message
+                           if telegram_diagnostic_use_active_template | default(false) | bool
+                           else 'Проверка отправки из Grafana'}
+                       | combine({} if telegram_diagnostic_use_stored_credentials |
+                           default(false) | bool else
+                           {'bottoken': vault_telegram_bot_token}) }}
+        return_content: true
+        status_code: [200, 207, 400, 500]
+        timeout: 30
+      register: grafana_diagnostic_test
+      changed_when: false
+      no_log: true
+
+    - name: Выделить результат Telegram integration
+      ansible.builtin.set_fact:
+        grafana_diagnostic_config: >-
+          {{ ((grafana_diagnostic_test.json | default({})).get('receivers', []) |
+              first | default({})).get('grafana_managed_receiver_configs', []) |
+              first | default({}) }}
+      no_log: true
+
+    - name: Показать результат теста без секретов
+      ansible.builtin.debug:
+        msg:
+          http: "{{ grafana_diagnostic_test.status }}"
+          template: >-
+            {{ 'действующий' if telegram_diagnostic_use_active_template |
+               default(false) | bool else 'короткий тестовый текст' }}
+          credentials: >-
+            {{ 'сохранённые в Grafana' if
+               telegram_diagnostic_use_stored_credentials | default(false) | bool
+               else 'из Vault' }}
+          status: >-
+            {{ grafana_diagnostic_config.status | default('не указан') }}
+          error: >-
+            {{ grafana_diagnostic_config.error |
+               default(grafana_diagnostic_test.json.message | default('')) |
+               replace(vault_telegram_bot_token, '[скрыто]') |
+               replace(vault_telegram_chat_id | string, '[скрыто]') }}
+
+    - name: Подтвердить отправку из Grafana
+      ansible.builtin.assert:
+        that:
+          - grafana_diagnostic_test.status == 200
+          - grafana_diagnostic_config.error | default('') | length == 0
+        fail_msg: >-
+          Тест из Grafana не прошёл. Сравните безопасный результат выше
+          с результатом playbooks/telegram_diagnostics.yml.

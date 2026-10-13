@@ -1,0 +1,11 @@
+services:
+  orchestrator-exporter:
+    image: {{ monitoring_images.python }}
+    container_name: monitoring-orchestrator-exporter
+    restart: unless-stopped
+    network_mode: host
+    read_only: true
+    volumes:
+      - ./orchestrator-exporter/exporter.py:/app/exporter.py:ro
+      - ./orchestrator-exporter/config.json:/etc/orchestrator-exporter/config.json:ro
+    command: [python, /app/exporter.py]

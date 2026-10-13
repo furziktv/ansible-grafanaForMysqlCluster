@@ -1,0 +1,17 @@
+services:
+  prometheus:
+    image: {{ monitoring_images.prometheus }}
+    container_name: monitoring-prometheus
+    restart: unless-stopped
+    read_only: true
+    ports:
+      - "{{ monitoring_bind_address }}:{{ prometheus_port }}:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time={{ prometheus_retention_time }}
+      - --storage.tsdb.retention.size={{ prometheus_retention_size }}
+    networks: [default]

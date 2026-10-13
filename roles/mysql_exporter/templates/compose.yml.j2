@@ -1,0 +1,32 @@
+services:
+  mysql-exporter:
+    image: {{ monitoring_images.mysql }}
+    container_name: monitoring-mysql-exporter
+    restart: unless-stopped
+    read_only: true
+{% if mysql_discovery.network == 'host' %}
+    network_mode: host
+{% else %}
+    networks:
+      - mysql_existing
+    ports:
+      - "{{ monitoring_bind_address }}:{{ mysql_exporter_port }}:9104"
+{% endif %}
+    volumes:
+      - ./my.cnf:/etc/mysqld-exporter/.my.cnf:ro
+    command:
+      - --config.my-cnf=/etc/mysqld-exporter/.my.cnf
+      - --mysqld.address={{ mysql_discovery.mysql_host }}:{{ mysql_discovery.port }}
+{% if mysql_discovery.network == 'host' %}
+      - --web.listen-address={{ monitoring_bind_address }}:{{ mysql_exporter_port }}
+{% endif %}
+      - --no-collect.info_schema.innodb_cmp
+      - --no-collect.info_schema.innodb_cmpmem
+      - --no-collect.info_schema.query_response_time
+      - --exporter.lock_wait_timeout=2
+{% if mysql_discovery.network != 'host' %}
+networks:
+  mysql_existing:
+    external: true
+    name: {{ mysql_discovery.network }}
+{% endif %}

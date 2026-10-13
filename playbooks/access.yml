@@ -1,0 +1,39 @@
+---
+# Проверяет только доступ. Не обращается к Docker, MySQL и Orchestrator.
+- name: Получить пароль sudo Agent
+  hosts: monitoring
+  gather_facts: false
+  become: false
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  roles:
+    - agent_privilege
+
+- name: Проверить SSH и sudo отдельно
+  hosts: all
+  gather_facts: false
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  tasks:
+    - name: Проверить SSH без sudo
+      ansible.builtin.ping:
+      become: false
+    - name: Подтвердить передачу отдельного пароля Agent между plays
+      ansible.builtin.assert:
+        that:
+          - ansible_become_password | default('') | length > 0
+          - agent_sudo_prompt is skipped or ansible_become_password == agent_sudo_prompt.user_input
+        fail_msg: 'Пароль Agent не сохранился между plays; проверьте agent_privilege.'
+      when: inventory_hostname == 'agent'
+      become: false
+      no_log: true
+    - name: Проверить sudo текущего пользователя
+      ansible.builtin.command: id -u
+      become: true
+      register: sudo_id
+      changed_when: false
+    - name: Подтвердить root после sudo
+      ansible.builtin.assert:
+        that:
+          - sudo_id.stdout == '0'
+        fail_msg: 'sudo не получил UID 0. Проверьте пароль sudo и права пользователя.'

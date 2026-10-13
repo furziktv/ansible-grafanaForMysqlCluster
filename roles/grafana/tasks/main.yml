@@ -1,0 +1,40 @@
+---
+- name: Создать каталоги Grafana
+  ansible.builtin.file:
+    path: "{{ monitoring_root }}/agent/grafana/{{ item }}"
+    state: directory
+    owner: '472'
+    group: '472'
+    mode: '0750'
+  loop:
+    - data
+    - dashboards
+    - provisioning
+    - provisioning/datasources
+    - provisioning/dashboards
+    - provisioning/alerting
+- name: Разместить provisioning источника данных
+  ansible.builtin.template:
+    src: datasource.yml.j2
+    dest: "{{ monitoring_root }}/agent/grafana/provisioning/datasources/prometheus.yml"
+    mode: '0644'
+  notify: Restart monitoring Grafana
+- name: Разместить секрет администратора Grafana
+  ansible.builtin.copy:
+    content: "{{ vault_grafana_admin_password }}"
+    dest: "{{ monitoring_root }}/agent/grafana/admin-password"
+    owner: '472'
+    group: '472'
+    mode: '0400'
+  no_log: true
+- name: Разместить Compose Grafana
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ monitoring_root }}/agent/grafana.yml"
+    mode: '0640'
+- name: Запустить Grafana
+  ansible.builtin.command:
+    cmd: docker compose -p monitoring -f grafana.yml up -d --no-deps grafana
+    chdir: "{{ monitoring_root }}/agent"
+  register: grafana_compose
+  changed_when: "'Created' in grafana_compose.stderr or 'Recreated' in grafana_compose.stderr or 'Started' in grafana_compose.stderr"

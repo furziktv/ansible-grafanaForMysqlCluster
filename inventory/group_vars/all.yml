@@ -1,0 +1,37 @@
+---
+# Все настройки мониторинга задаются здесь; секреты только в vault.yml.
+# Подтверждённый SSH-пользователь DB1-DB3.
+ansible_user: furzik
+# При входе по ключу можно указать путь к нему.
+# ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+monitoring_root: /opt/monitoring
+# Разрешать установку Docker только на новом Agent после проверки, что там нет Docker/containerd/Podman.
+monitoring_install_docker_on_agent: false
+monitoring_bind_address: "{{ ansible_host }}"
+monitoring_trusted_cidr: 10.100.0.0/24
+monitoring_scrape_interval: 10s
+prometheus_retention_time: 15d
+prometheus_retention_size: 20GB
+node_exporter_port: 9100
+mysql_exporter_port: 9104
+orchestrator_exporter_port: 9125
+prometheus_port: 9090
+grafana_port: 3000
+mysql_port: 3306
+mysql_container_override: ""
+mysql_network_override: ""
+orchestrator_api_urls:
+  - http://10.100.0.1:3000
+  - http://10.100.0.2:3000
+  - http://10.100.0.3:3000
+orchestrator_cluster_hint: ""
+orchestrator_api_timeout: 3
+telegram_enabled: true
+telegram_vless_enabled: true
+monitoring_images:
+  node: quay.io/prometheus/node-exporter:v1.9.1
+  mysql: prom/mysqld-exporter:v0.17.2
+  prometheus: prom/prometheus:v3.5.0
+  grafana: grafana/grafana-oss:12.1.1
+  python: python:3.13.7-alpine3.22
+  xray: ghcr.io/xtls/xray-core:26.9.9

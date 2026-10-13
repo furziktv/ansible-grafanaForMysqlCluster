@@ -1,0 +1,53 @@
+---
+# Обновляет только exporter Orchestrator и дашборды на Agent.
+# Узлы БД и существующие сервисы кластера не затрагиваются.
+- name: Получить пароль sudo Agent
+  hosts: monitoring
+  gather_facts: false
+  become: false
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  roles:
+    - agent_privilege
+
+- name: Обновить отображение failover на Agent
+  hosts: monitoring
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  roles:
+    - orchestrator_exporter
+    - dashboards
+  handlers:
+    - name: Restart monitoring Grafana
+      ansible.builtin.command: docker restart monitoring-grafana
+      changed_when: true
+  post_tasks:
+    - name: Применить изменения exporter и Grafana
+      ansible.builtin.meta: flush_handlers
+    - name: Проверить exporter Orchestrator
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ orchestrator_exporter_port }}/metrics"
+        return_content: true
+        timeout: 10
+      register: failover_exporter_metrics
+      retries: 8
+      delay: 3
+      until: failover_exporter_metrics.status == 200
+      changed_when: false
+    - name: Проверить Grafana
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ grafana_port }}/api/health"
+        timeout: 5
+      register: failover_grafana_health
+      retries: 12
+      delay: 5
+      until: failover_grafana_health.status == 200
+      changed_when: false
+    - name: Показать состояние определения Primary
+      ansible.builtin.debug:
+        msg: >-
+          Grafana HTTP {{ failover_grafana_health.status }};
+          Orchestrator Exporter HTTP {{ failover_exporter_metrics.status }};
+          Orchestrator Primary {{ 'известен' if 'orchestrator_primary_known 1' in failover_exporter_metrics.content else 'неизвестен (проверяйте единственный writable MySQL в панели)' }}.

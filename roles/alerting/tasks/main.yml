@@ -1,0 +1,33 @@
+---
+- name: Разместить правила Unified Alerting
+  ansible.builtin.copy:
+    src: alerts.json
+    dest: "{{ monitoring_root }}/agent/grafana/provisioning/alerting/alerts.json"
+    mode: '0644'
+  register: alerting_rules_file
+  notify: Restart monitoring Grafana
+- name: Проверить секреты Telegram при включении
+  ansible.builtin.assert:
+    that:
+      - vault_telegram_bot_token | default('') | length > 0
+      - vault_telegram_chat_id | default('') | length > 0
+    fail_msg: 'Заполните vault_telegram_bot_token и vault_telegram_chat_id.'
+  when: telegram_enabled | bool
+  no_log: true
+- name: Разместить Telegram contact point
+  ansible.builtin.template:
+    src: telegram.yml.j2
+    dest: "{{ monitoring_root }}/agent/grafana/provisioning/alerting/telegram.yml"
+    owner: '472'
+    group: '472'
+    mode: '0400'
+  register: alerting_telegram_file
+  when: telegram_enabled | bool
+  notify: Restart monitoring Grafana
+  no_log: true
+- name: Удалить ранее созданный Telegram contact point при выключении
+  ansible.builtin.file:
+    path: "{{ monitoring_root }}/agent/grafana/provisioning/alerting/telegram.yml"
+    state: absent
+  when: not telegram_enabled | bool
+  notify: Restart monitoring Grafana

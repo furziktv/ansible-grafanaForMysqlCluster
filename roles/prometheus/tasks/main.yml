@@ -1,0 +1,26 @@
+---
+- name: Создать каталоги Prometheus
+  ansible.builtin.file:
+    path: "{{ monitoring_root }}/agent/prometheus/{{ item }}"
+    state: directory
+    owner: '65534'
+    group: '65534'
+    mode: '0750'
+  loop: ['', data]
+- name: Разместить конфигурацию Prometheus
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: "{{ monitoring_root }}/agent/prometheus/prometheus.yml"
+    mode: '0644'
+  notify: Restart monitoring Prometheus
+- name: Разместить Compose Prometheus
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ monitoring_root }}/agent/prometheus.yml"
+    mode: '0640'
+- name: Запустить Prometheus
+  ansible.builtin.command:
+    cmd: docker compose -p monitoring -f prometheus.yml up -d --no-deps prometheus
+    chdir: "{{ monitoring_root }}/agent"
+  register: prometheus_compose
+  changed_when: "'Created' in prometheus_compose.stderr or 'Recreated' in prometheus_compose.stderr or 'Started' in prometheus_compose.stderr"

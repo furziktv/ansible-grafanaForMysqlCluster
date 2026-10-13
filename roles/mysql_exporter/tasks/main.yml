@@ -1,0 +1,42 @@
+---
+- name: Разместить учётные данные только для exporter
+  ansible.builtin.template:
+    src: my.cnf.j2
+    dest: "{{ monitoring_root }}/db-exporters/my.cnf"
+    owner: '65534'
+    group: '65534'
+    mode: '0400'
+  no_log: true
+  notify: Restart monitoring MySQL Exporter
+- name: Разместить Compose MySQL Exporter
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ monitoring_root }}/db-exporters/mysql-exporter.yml"
+    mode: '0640'
+  notify: Restart monitoring MySQL Exporter
+- name: Запустить только новый MySQL Exporter
+  ansible.builtin.command:
+    cmd: docker compose -p monitoring-exporters -f mysql-exporter.yml up -d --no-deps mysql-exporter
+    chdir: "{{ monitoring_root }}/db-exporters"
+  register: mysql_compose
+  changed_when: "'Created' in mysql_compose.stderr or 'Recreated' in mysql_compose.stderr or 'Started' in mysql_compose.stderr"
+- name: Применить обновлённые учётные данные exporter
+  ansible.builtin.meta: flush_handlers
+- name: Дождаться метрик MySQL Exporter
+  ansible.builtin.uri:
+    url: "http://{{ ansible_host }}:{{ mysql_exporter_port }}/metrics"
+    return_content: true
+    timeout: 10
+  register: mysql_metrics
+  retries: 10
+  delay: 3
+  until: mysql_metrics.status == 200
+  changed_when: false
+- name: Подтвердить доступ к MySQL и права пользователя
+  ansible.builtin.assert:
+    that:
+      - "'mysql_up 1' in mysql_metrics.content"
+      - "'mysql_version_info' in mysql_metrics.content"
+      - "'mysql_global_status_queries' in mysql_metrics.content"
+      - "'mysql_exporter_collector_success{collector=\"collect.slave_status\"} 1' in mysql_metrics.content"
+    fail_msg: "MySQL exporter не получил метрики. Проверьте vault credentials, host grant, PROCESS/REPLICATION CLIENT/SELECT и сеть. Пользователь создаётся вручную; см. README."

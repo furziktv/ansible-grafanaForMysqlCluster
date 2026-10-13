@@ -1,0 +1,62 @@
+---
+- name: Получить пароль sudo Agent
+  hosts: monitoring
+  gather_facts: false
+  become: false
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  roles:
+    - agent_privilege
+
+- name: Подготовить Docker только на Agent при явном разрешении
+  hosts: monitoring
+  gather_facts: true
+  become: true
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  roles:
+    - agent_docker
+
+- name: Проверить Agent и узлы БД
+  hosts: all
+  gather_facts: false
+  any_errors_fatal: true
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  tasks:
+    - name: Проверить SSH
+      ansible.builtin.ping:
+      become: false
+    - name: Собрать факты
+      ansible.builtin.setup:
+      become: false
+    - name: Проверить Docker и свободные порты
+      ansible.builtin.import_role:
+        name: preflight
+      become: true
+
+- name: Развернуть только exporters на узлах БД
+  hosts: mysql_nodes
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  roles:
+    - node_exporter
+    - mysql_exporter
+
+- name: Развернуть мониторинг на Agent
+  hosts: monitoring
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  roles:
+    - node_exporter
+    - orchestrator_exporter
+    - prometheus
+    - telegram_vless
+    - grafana
+    - dashboards
+    - alerting
+    - validation

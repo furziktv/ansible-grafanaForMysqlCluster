@@ -1,0 +1,144 @@
+---
+- name: Проверить параметры VLESS для Telegram
+  ansible.builtin.assert:
+    that:
+      - telegram_enabled | bool
+      - vault_telegram_vless_uri | default('') | length > 0
+    fail_msg: 'Включите telegram_enabled и добавьте vault_telegram_vless_uri в зашифрованный Vault.'
+  when: telegram_vless_enabled | bool
+- name: Создать закрытый каталог конфигурации VLESS
+  ansible.builtin.file:
+    path: "{{ monitoring_root }}/agent/telegram-vless"
+    state: directory
+    owner: '65532'
+    group: '65532'
+    mode: '0700'
+  when: telegram_vless_enabled | bool
+- name: Разместить конфигурацию маршрута Telegram
+  ansible.builtin.copy:
+    content: "{{ vault_telegram_vless_uri | telegram_vless_config }}"
+    dest: "{{ monitoring_root }}/agent/telegram-vless/config.json"
+    owner: '65532'
+    group: '65532'
+    mode: '0400'
+  register: telegram_vless_config_file
+  when: telegram_vless_enabled | bool
+  no_log: true
+- name: Разместить отдельный Compose Xray
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ monitoring_root }}/agent/telegram-vless.yml"
+    mode: '0640'
+  register: telegram_vless_compose_file
+  when: telegram_vless_enabled | bool
+- name: Проверить конфигурацию Xray без запуска прокси
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --network
+      - none
+      - -v
+      - "{{ monitoring_root }}/agent/telegram-vless/config.json:/etc/xray/config.json:ro"
+      - "{{ monitoring_images.xray }}"
+      - run
+      - -test
+      - -c
+      - /etc/xray/config.json
+  changed_when: false
+  when: telegram_vless_enabled | bool
+  no_log: true
+- name: Запустить только прокси Telegram
+  ansible.builtin.command:
+    cmd: >-
+      docker compose -p monitoring -f telegram-vless.yml up -d --no-deps
+      {{ '--force-recreate' if telegram_vless_config_file.changed or telegram_vless_compose_file.changed else '' }}
+      telegram-vless
+    chdir: "{{ monitoring_root }}/agent"
+  register: telegram_vless_compose
+  changed_when: >-
+    telegram_vless_config_file.changed or telegram_vless_compose_file.changed or
+    'Created' in telegram_vless_compose.stderr or 'Recreated' in telegram_vless_compose.stderr or
+    'Started' in telegram_vless_compose.stderr
+  when: telegram_vless_enabled | bool
+- name: Проверить HTTPS к Telegram через отдельный прокси
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --network
+      - monitoring_default
+      - -e
+      - HTTPS_PROXY=http://telegram-vless:18080
+      - "{{ monitoring_images.python }}"
+      - python3
+      - -c
+      - |
+        import urllib.request
+        import urllib.error
+        import socket
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, request, fp, code, message, headers, newurl):
+                return None
+        opener = urllib.request.build_opener(NoRedirect())
+        try:
+            status = opener.open('https://api.telegram.org/', timeout=12).status
+        except urllib.error.HTTPError as error:
+            status = error.code
+        except (urllib.error.URLError, ConnectionError, TimeoutError, socket.timeout) as error:
+            reason = getattr(error, 'reason', error)
+            raise SystemExit(f'Прокси не установил HTTPS-соединение: {type(reason).__name__}')
+        if not 200 <= status < 500:
+            raise SystemExit(f'Telegram API HTTP {status}')
+        print(f'Telegram API HTTP {status} через VLESS')
+  register: telegram_vless_https_probe
+  changed_when: false
+  failed_when: false
+  retries: 3
+  delay: 3
+  until: telegram_vless_https_probe.rc == 0
+  when: telegram_vless_enabled | bool
+- name: Получить журнал Xray при ошибке HTTPS
+  ansible.builtin.command:
+    argv:
+      - docker
+      - logs
+      - --since
+      - 5m
+      - --tail
+      - '80'
+      - monitoring-telegram-vless
+  register: telegram_vless_failure_logs
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when:
+    - telegram_vless_enabled | bool
+    - telegram_vless_https_probe.rc != 0
+- name: Показать безопасную диагностику VLESS
+  ansible.builtin.debug:
+    msg:
+      error: "{{ telegram_vless_https_probe.stderr | trim }}"
+      xray_signals: >-
+        {{ ['reality', 'handshake', 'timeout', 'connection refused',
+            'connection reset', 'failed to dial', 'invalid user', 'eof']
+           | select('in', (telegram_vless_failure_logs.stdout | default('') ~ ' ' ~
+                           telegram_vless_failure_logs.stderr | default('')) | lower)
+           | list }}
+      next_step: >-
+        Новый VLESS-маршрут не работает. Сверьте в Vault полный URI
+        с рабочей ссылкой клиента: сервер, порт, UUID, security,
+        type, SNI, public key, short ID, flow и параметры транспорта.
+  when:
+    - telegram_vless_enabled | bool
+    - telegram_vless_https_probe.rc != 0
+- name: Остановиться при неработающем VLESS-маршруте
+  ansible.builtin.assert:
+    that:
+      - telegram_vless_https_probe.rc == 0
+    fail_msg: >-
+      HTTPS к Telegram через новый VLESS не работает; причина показана выше.
+      Ни Grafana, ни MySQL-кластер далее не обновлялись.
+  when: telegram_vless_enabled | bool

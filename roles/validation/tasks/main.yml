@@ -1,0 +1,151 @@
+---
+- name: Применить изменения provisioning перед проверкой
+  ansible.builtin.meta: flush_handlers
+- name: Проверить Prometheus
+  ansible.builtin.uri:
+    url: "http://{{ ansible_host }}:{{ prometheus_port }}/-/ready"
+    timeout: 5
+  register: prometheus_ready
+  retries: 12
+  delay: 5
+  until: prometheus_ready.status == 200
+  changed_when: false
+- name: Проверить Grafana
+  ansible.builtin.uri:
+    url: "http://{{ ansible_host }}:{{ grafana_port }}/api/health"
+    timeout: 5
+  register: grafana_health
+  retries: 12
+  delay: 5
+  until: grafana_health.status == 200
+  changed_when: false
+- name: Проверить targets Prometheus
+  ansible.builtin.uri:
+    url: "http://{{ ansible_host }}:{{ prometheus_port }}/api/v1/targets?state=active"
+    return_content: true
+  register: prometheus_targets
+  retries: 8
+  delay: 5
+  until: >-
+    prometheus_targets.json is defined and
+    (prometheus_targets.json.data.activeTargets | length) >= 9 and
+    (prometheus_targets.json.data.activeTargets | selectattr('health', 'equalto', 'up') | list | length) >= 9
+  changed_when: false
+  ignore_errors: true
+  no_log: true
+- name: Показать недоступные Prometheus targets без полного ответа API
+  ansible.builtin.debug:
+    msg: >-
+      {{ item.labels.job }}/{{ item.labels.server | default(item.labels.instance) }}:
+      {{ item.health }};
+      {% if 'deadline exceeded' in item.lastError | default('') %}таймаут сетевого доступа
+      {% elif 'connection refused' in item.lastError | default('') %}соединение отклонено
+      {% else %}проверьте endpoint и его журнал
+      {% endif %}
+  loop: >-
+    {{ prometheus_targets.json.data.activeTargets | default([])
+       | rejectattr('health', 'equalto', 'up') | list }}
+  loop_control:
+    label: "{{ item.labels.job }}/{{ item.labels.server | default(item.labels.instance) }}"
+- name: Подтвердить доступность всех Prometheus targets
+  ansible.builtin.assert:
+    that:
+      - prometheus_targets.json.data.activeTargets | length >= 9
+      - prometheus_targets.json.data.activeTargets | selectattr('health', 'equalto', 'up') | list | length >= 9
+    fail_msg: >-
+      Prometheus видит не все 9 targets в состоянии UP. Для DB exporters
+      проверьте доступ Agent 10.100.0.4 к TCP 9100 и 9104 на DB1-DB3;
+      этот playbook не меняет firewall. Подробности перечислены выше.
+- name: Проверить MySQL и текущий Primary через Prometheus
+  ansible.builtin.uri:
+    url: "http://{{ ansible_host }}:{{ prometheus_port }}/api/v1/query?query={{ item | urlencode }}"
+    return_content: true
+  loop:
+    - mysql_up
+    - orchestrator_primary
+    - orchestrator_instance_info
+    - orchestrator_api_up
+    - mysql_version_info
+    - mysql_global_variables_read_only
+    - mysql_exporter_collector_success{collector="collect.slave_status"}
+  register: metric_queries
+  retries: 8
+  delay: 3
+  until: >-
+    item != 'orchestrator_primary' or
+    (metric_queries.json is defined and
+     metric_queries.json.data.result | length == 1 and
+     metric_queries.json.data.result[0].metric.mysql_host is defined)
+  changed_when: false
+- name: Подтвердить данные кластера
+  ansible.builtin.assert:
+    that:
+      - metric_queries.results[0].json.data.result | length == 3
+      - metric_queries.results[0].json.data.result | map(attribute='value') | map('last') | map('float') | min == 1.0
+      - metric_queries.results[1].json.data.result | length == 1
+      - metric_queries.results[1].json.data.result[0].metric.server in groups['mysql_nodes']
+      - metric_queries.results[1].json.data.result[0].metric.mysql_host is defined
+      - metric_queries.results[2].json.data.result | length == 3
+      - metric_queries.results[3].json.data.result | map(attribute='value') | map('last') | map('float') | max == 1.0
+      - metric_queries.results[4].json.data.result | length == 3
+      - metric_queries.results[5].json.data.result | length == 3
+      - >-
+        (metric_queries.results[5].json.data.result
+         | selectattr('metric.server', 'equalto', metric_queries.results[1].json.data.result[0].metric.server)
+         | map(attribute='value') | map('last') | map('float') | list) == [0.0]
+      - metric_queries.results[6].json.data.result | length == 3
+      - metric_queries.results[6].json.data.result | map(attribute='value') | map('last') | map('float') | min == 1.0
+    fail_msg: 'Prometheus не подтвердил 3 MySQL, одну актуальную Primary, топологию из 3 узлов и доступный Orchestrator. Проверьте targets и API.'
+- name: Проверить Grafana datasource
+  ansible.builtin.uri:
+    url: "http://{{ ansible_host }}:{{ grafana_port }}/api/datasources/uid/prometheus"
+    user: "{{ vault_grafana_admin_user }}"
+    password: "{{ vault_grafana_admin_password }}"
+    force_basic_auth: true
+    return_content: true
+  register: datasource
+  no_log: true
+  changed_when: false
+- name: Проверить дашборды Grafana
+  ansible.builtin.uri:
+    url: "http://{{ ansible_host }}:{{ grafana_port }}/api/search?folderUIDs=mysql-cluster"
+    user: "{{ vault_grafana_admin_user }}"
+    password: "{{ vault_grafana_admin_password }}"
+    force_basic_auth: true
+    return_content: true
+  register: dashboards_found
+  no_log: true
+  changed_when: false
+- name: Проверить правила Grafana Alerting
+  ansible.builtin.uri:
+    url: "http://{{ ansible_host }}:{{ grafana_port }}/api/v1/provisioning/alert-rules"
+    user: "{{ vault_grafana_admin_user }}"
+    password: "{{ vault_grafana_admin_password }}"
+    force_basic_auth: true
+    return_content: true
+  register: alert_rules_found
+  no_log: true
+  changed_when: false
+- name: Подтвердить provisioning Grafana
+  ansible.builtin.assert:
+    that:
+      - datasource.json.uid == 'prometheus'
+      - dashboards_found.json | length >= 6
+      - alert_rules_found.json | length >= 15
+    fail_msg: 'Grafana не создала datasource, шесть дашбордов или 15 правил. Смотрите docker logs monitoring-grafana.'
+- name: Вывести итоговый отчёт
+  ansible.builtin.debug:
+    msg:
+      prometheus: "{{ prometheus_ready.status }}"
+      grafana: "{{ grafana_health.status }}"
+      targets_up: "{{ prometheus_targets.json.data.activeTargets | selectattr('health', 'equalto', 'up') | list | length }}"
+      target_health: "{{ prometheus_targets.json.data.activeTargets | map(attribute='labels') | list }}"
+      mysql_up: "{{ metric_queries.results[0].json.data.result | length }}"
+      mysql_nodes: "{{ metric_queries.results[0].json.data.result | list }}"
+      primary: "{{ metric_queries.results[1].json.data.result[0].metric.server }}"
+      primary_host: "{{ metric_queries.results[1].json.data.result[0].metric.mysql_host }}"
+      topology_nodes: "{{ metric_queries.results[2].json.data.result | length }}"
+      mysql_versions: "{{ metric_queries.results[4].json.data.result | map(attribute='metric') | list }}"
+      read_only_values: "{{ metric_queries.results[5].json.data.result | map(attribute='value') | list }}"
+      dashboards: "{{ dashboards_found.json | length }}"
+      alerts: "{{ alert_rules_found.json | length }}"

@@ -1,0 +1,94 @@
+---
+# Render the saved notification template with synthetic data. Sends no Telegram message.
+- name: Проверить шаблон Telegram без отправки уведомления
+  hosts: monitoring
+  gather_facts: false
+  become: false
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  tasks:
+    - name: Прочитать существующую Telegram integration
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ grafana_port }}/api/v1/provisioning/contact-points"
+        user: "{{ vault_grafana_admin_user }}"
+        password: "{{ vault_grafana_admin_password }}"
+        force_basic_auth: true
+        return_content: true
+      register: telegram_template_contacts
+      changed_when: false
+      no_log: true
+
+    - name: Подтвердить единственную integration проекта
+      ansible.builtin.assert:
+        that:
+          - >-
+            telegram_template_contacts.json |
+            selectattr('uid', 'equalto', 'mysql_cluster_telegram') |
+            list | length == 1
+
+    - name: Сохранить шаблон без вывода в журнал Ansible
+      ansible.builtin.set_fact:
+        telegram_template_source: >-
+          {{ (telegram_template_contacts.json |
+              selectattr('uid', 'equalto', 'mysql_cluster_telegram') |
+              first).settings.message }}
+      no_log: true
+
+    - name: Выполнить шаблон в Grafana с одним синтетическим событием
+      ansible.builtin.uri:
+        url: >-
+          http://{{ ansible_host }}:{{ grafana_port }}/api/alertmanager/grafana/config/api/v1/templates/test
+        method: POST
+        user: "{{ vault_grafana_admin_user }}"
+        password: "{{ vault_grafana_admin_password }}"
+        force_basic_auth: true
+        body_format: json
+        body:
+          name: telegram-diagnostic
+          template: >-
+            {{ '{{ define "telegram-diagnostic" }}' ~
+               telegram_template_source ~ '{{ end }}' }}
+          alerts:
+            - labels:
+                alertname: Diagnostic
+                severity: warning
+                server: db1
+              annotations:
+                summary: Проверка шаблона
+                current_value: '1'
+                value_unit: '%'
+        return_content: true
+        status_code: [200, 400]
+        timeout: 10
+      register: telegram_template_result
+      changed_when: false
+      no_log: true
+
+    - name: Показать безопасный результат рендеринга
+      ansible.builtin.debug:
+        msg:
+          http: "{{ telegram_template_result.status }}"
+          errors: >-
+            {{ (telegram_template_result.json.errors | default([])) |
+               map(attribute='message') |
+               map('replace', vault_telegram_bot_token, '[скрыто]') |
+               map('replace', vault_telegram_chat_id | string, '[скрыто]') |
+               list }}
+          rendered: >-
+            {{ (telegram_template_result.json.results | default([])) |
+               map(attribute='text') |
+               map('trim') |
+               reject('equalto', '') | list }}
+
+    - name: Подтвердить непустой текст шаблона
+      ansible.builtin.assert:
+        that:
+          - telegram_template_result.status == 200
+          - telegram_template_result.json.errors | default([]) | length == 0
+          - >-
+            telegram_template_result.json.results | default([]) |
+            map(attribute='text') | map('trim') |
+            reject('equalto', '') | list | length > 0
+        fail_msg: >-
+          Grafana не смогла сформировать текст из действующего шаблона.
+          Смотрите безопасный результат выше; contact point не менялся.

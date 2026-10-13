@@ -1,0 +1,899 @@
+{
+  "apiVersion": 1,
+  "groups": [
+    {
+      "orgId": 1,
+      "name": "MySQL Cluster",
+      "folder": "MySQL Cluster",
+      "interval": "10s",
+      "rules": [
+        {
+          "uid": "primary_down",
+          "title": "Primary Down",
+          "condition": "B",
+          "for": "5s",
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "annotations": {
+            "summary": "Не подтверждена доступность Primary",
+            "description": "Проверить метрики и состояние кластера. Мониторинг не управляет failover.",
+            "resolved": "Primary снова доступен"
+          },
+          "labels": {
+            "severity": "critical",
+            "service": "mysql-cluster"
+          },
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "prometheus",
+              "relativeTimeRange": {
+                "from": 300,
+                "to": 0
+              },
+              "model": {
+                "refId": "A",
+                "expr": "max((orchestrator_primary * on(server) group_left() (1 - mysql_up)) or (orchestrator_primary_known == bool 0))",
+                "instant": true,
+                "range": false,
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "model": {
+                "refId": "B",
+                "expression": "$A > 0",
+                "type": "math",
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            }
+          ]
+        },
+        {
+          "uid": "mysql_down",
+          "title": "MySQL Down",
+          "condition": "B",
+          "for": "5s",
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "annotations": {
+            "summary": "MySQL или его exporter недоступен",
+            "description": "Проверить метрики и состояние кластера. Мониторинг не управляет failover.",
+            "resolved": "MySQL снова доступен"
+          },
+          "labels": {
+            "severity": "critical",
+            "service": "mysql-cluster"
+          },
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "prometheus",
+              "relativeTimeRange": {
+                "from": 300,
+                "to": 0
+              },
+              "model": {
+                "refId": "A",
+                "expr": "max by (server) (((up{job=\"mysql\",server=~\"db[123]\"} == bool 0) + on(server) (mysql_up{server=~\"db[123]\"} == bool 0)) or on(server) (up{job=\"mysql\",server=~\"db[123]\"} == bool 0))",
+                "instant": true,
+                "range": false,
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "model": {
+                "refId": "B",
+                "expression": "$A > 0",
+                "type": "math",
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            }
+          ]
+        },
+        {
+          "uid": "replication_stopped",
+          "title": "Replication Stopped",
+          "condition": "B",
+          "for": "5s",
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "annotations": {
+            "summary": "Репликация остановлена",
+            "description": "Проверить метрики и состояние кластера. Мониторинг не управляет failover.",
+            "resolved": "Репликация восстановлена"
+          },
+          "labels": {
+            "severity": "critical",
+            "service": "mysql-cluster"
+          },
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "prometheus",
+              "relativeTimeRange": {
+                "from": 300,
+                "to": 0
+              },
+              "model": {
+                "refId": "A",
+                "expr": "max by (server) (label_replace(((mysql_slave_status_slave_io_running or mysql_slave_status_replica_io_running) == bool 0), \"check\", \"io\", \"server\", \".*\") or label_replace(((mysql_slave_status_slave_sql_running or mysql_slave_status_replica_sql_running) == bool 0), \"check\", \"sql\", \"server\", \".*\") or label_replace((orchestrator_instance_healthy{server!=\"unknown\",role=\"replica\"} == bool 0), \"check\", \"topology\", \"server\", \".*\"))",
+                "instant": true,
+                "range": false,
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "model": {
+                "refId": "B",
+                "expression": "$A > 0",
+                "type": "math",
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            }
+          ]
+        },
+        {
+          "uid": "lag_critical",
+          "title": "Replication Lag Critical",
+          "condition": "B",
+          "for": "5s",
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "annotations": {
+            "summary": "Задержка репликации больше 60 с",
+            "description": "Проверить метрики и состояние кластера. Мониторинг не управляет failover.",
+            "value_unit": " с",
+            "current_value": "{{ printf \"%.1f\" $values.A.Value }}",
+            "resolved": "Задержка репликации ниже 60 с"
+          },
+          "labels": {
+            "severity": "critical",
+            "service": "mysql-cluster"
+          },
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "prometheus",
+              "relativeTimeRange": {
+                "from": 300,
+                "to": 0
+              },
+              "model": {
+                "refId": "A",
+                "expr": "(mysql_slave_status_seconds_behind_master or mysql_slave_status_seconds_behind_source)",
+                "instant": true,
+                "range": false,
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "model": {
+                "refId": "B",
+                "expression": "$A > 60",
+                "type": "math",
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            }
+          ]
+        },
+        {
+          "uid": "orchestrator_down",
+          "title": "Orchestrator Down",
+          "condition": "B",
+          "for": "5s",
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "annotations": {
+            "summary": "Orchestrator API или exporter недоступен",
+            "description": "Проверить метрики и состояние кластера. Мониторинг не управляет failover.",
+            "resolved": "Orchestrator снова доступен"
+          },
+          "labels": {
+            "severity": "critical",
+            "service": "mysql-cluster"
+          },
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "prometheus",
+              "relativeTimeRange": {
+                "from": 300,
+                "to": 0
+              },
+              "model": {
+                "refId": "A",
+                "expr": "max((max(orchestrator_api_up) == bool 0) or (up{job=\"orchestrator\"} == bool 0))",
+                "instant": true,
+                "range": false,
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "model": {
+                "refId": "B",
+                "expression": "$A > 0",
+                "type": "math",
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            }
+          ]
+        },
+        {
+          "uid": "disk_critical",
+          "title": "Disk Space Critical",
+          "condition": "B",
+          "for": "5s",
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "annotations": {
+            "summary": "Диск / заполнен более чем на 90%",
+            "description": "Проверить метрики и состояние кластера. Мониторинг не управляет failover.",
+            "value_unit": "%",
+            "current_value": "{{ printf \"%.1f\" $values.A.Value }}",
+            "resolved": "Критический порог диска больше не превышен"
+          },
+          "labels": {
+            "severity": "critical",
+            "service": "mysql-cluster"
+          },
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "prometheus",
+              "relativeTimeRange": {
+                "from": 300,
+                "to": 0
+              },
+              "model": {
+                "refId": "A",
+                "expr": "100 * (1 - node_filesystem_avail_bytes{mountpoint=\"/\",server=~\"db[123]\"} / node_filesystem_size_bytes{mountpoint=\"/\",server=~\"db[123]\"})",
+                "instant": true,
+                "range": false,
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "model": {
+                "refId": "B",
+                "expression": "$A > 90",
+                "type": "math",
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            }
+          ]
+        },
+        {
+          "uid": "multiple_writable",
+          "title": "Multiple Writable Primaries",
+          "condition": "B",
+          "for": "5s",
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "annotations": {
+            "summary": "Несколько узлов доступны для записи",
+            "description": "Проверить метрики и состояние кластера. Мониторинг не управляет failover.",
+            "value_unit": " узла",
+            "current_value": "{{ printf \"%.1f\" $values.A.Value }}",
+            "resolved": "Остался один доступный для записи узел"
+          },
+          "labels": {
+            "severity": "critical",
+            "service": "mysql-cluster"
+          },
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "prometheus",
+              "relativeTimeRange": {
+                "from": 300,
+                "to": 0
+              },
+              "model": {
+                "refId": "A",
+                "expr": "sum(mysql_global_variables_read_only{server=~\"db[123]\"} == bool 0)",
+                "instant": true,
+                "range": false,
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "model": {
+                "refId": "B",
+                "expression": "$A > 1",
+                "type": "math",
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            }
+          ]
+        },
+        {
+          "uid": "lag_warning",
+          "title": "Replication Lag Warning",
+          "condition": "B",
+          "for": "5s",
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "annotations": {
+            "summary": "Задержка репликации больше 15 с",
+            "description": "Проверить метрики и состояние кластера. Мониторинг не управляет failover.",
+            "value_unit": " с",
+            "current_value": "{{ printf \"%.1f\" $values.A.Value }}",
+            "resolved": "Задержка репликации снизилась"
+          },
+          "labels": {
+            "severity": "warning",
+            "service": "mysql-cluster"
+          },
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "prometheus",
+              "relativeTimeRange": {
+                "from": 300,
+                "to": 0
+              },
+              "model": {
+                "refId": "A",
+                "expr": "(mysql_slave_status_seconds_behind_master or mysql_slave_status_seconds_behind_source)",
+                "instant": true,
+                "range": false,
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "model": {
+                "refId": "B",
+                "expression": "$A > 15 && $A <= 60",
+                "type": "math",
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            }
+          ]
+        },
+        {
+          "uid": "cpu_high",
+          "title": "CPU High",
+          "condition": "B",
+          "for": "5s",
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "annotations": {
+            "summary": "Загрузка CPU выше 85%",
+            "description": "Проверить метрики и состояние кластера. Мониторинг не управляет failover.",
+            "value_unit": "%",
+            "current_value": "{{ printf \"%.1f\" $values.A.Value }}",
+            "resolved": "Загрузка CPU снизилась"
+          },
+          "labels": {
+            "severity": "warning",
+            "service": "mysql-cluster"
+          },
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "prometheus",
+              "relativeTimeRange": {
+                "from": 300,
+                "to": 0
+              },
+              "model": {
+                "refId": "A",
+                "expr": "100 * (1 - avg by (server) (rate(node_cpu_seconds_total{mode=\"idle\",server=~\"db[123]\"}[5m])))",
+                "instant": true,
+                "range": false,
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "model": {
+                "refId": "B",
+                "expression": "$A > 85",
+                "type": "math",
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            }
+          ]
+        },
+        {
+          "uid": "ram_high",
+          "title": "RAM High",
+          "condition": "B",
+          "for": "5s",
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "annotations": {
+            "summary": "Использование RAM выше 90%",
+            "description": "Проверить метрики и состояние кластера. Мониторинг не управляет failover.",
+            "value_unit": "%",
+            "current_value": "{{ printf \"%.1f\" $values.A.Value }}",
+            "resolved": "Использование RAM снизилось"
+          },
+          "labels": {
+            "severity": "warning",
+            "service": "mysql-cluster"
+          },
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "prometheus",
+              "relativeTimeRange": {
+                "from": 300,
+                "to": 0
+              },
+              "model": {
+                "refId": "A",
+                "expr": "100 * (1 - node_memory_MemAvailable_bytes{server=~\"db[123]\"} / node_memory_MemTotal_bytes{server=~\"db[123]\"})",
+                "instant": true,
+                "range": false,
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "model": {
+                "refId": "B",
+                "expression": "$A > 90",
+                "type": "math",
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            }
+          ]
+        },
+        {
+          "uid": "disk_low",
+          "title": "Disk Space Low",
+          "condition": "B",
+          "for": "5s",
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "annotations": {
+            "summary": "Диск / заполнен более чем на 80%",
+            "description": "Проверить метрики и состояние кластера. Мониторинг не управляет failover.",
+            "value_unit": "%",
+            "current_value": "{{ printf \"%.1f\" $values.A.Value }}",
+            "resolved": "На диске снова достаточно места"
+          },
+          "labels": {
+            "severity": "warning",
+            "service": "mysql-cluster"
+          },
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "prometheus",
+              "relativeTimeRange": {
+                "from": 300,
+                "to": 0
+              },
+              "model": {
+                "refId": "A",
+                "expr": "100 * (1 - node_filesystem_avail_bytes{mountpoint=\"/\",server=~\"db[123]\"} / node_filesystem_size_bytes{mountpoint=\"/\",server=~\"db[123]\"})",
+                "instant": true,
+                "range": false,
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "model": {
+                "refId": "B",
+                "expression": "$A > 80 && $A <= 90",
+                "type": "math",
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            }
+          ]
+        },
+        {
+          "uid": "connections_high",
+          "title": "Connection Usage High",
+          "condition": "B",
+          "for": "5s",
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "annotations": {
+            "summary": "Соединения MySQL выше 80% лимита",
+            "description": "Проверить метрики и состояние кластера. Мониторинг не управляет failover.",
+            "value_unit": "%",
+            "current_value": "{{ printf \"%.1f\" $values.A.Value }}",
+            "resolved": "Число соединений MySQL снизилось"
+          },
+          "labels": {
+            "severity": "warning",
+            "service": "mysql-cluster"
+          },
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "prometheus",
+              "relativeTimeRange": {
+                "from": 300,
+                "to": 0
+              },
+              "model": {
+                "refId": "A",
+                "expr": "100 * mysql_global_status_threads_connected / mysql_global_variables_max_connections",
+                "instant": true,
+                "range": false,
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "model": {
+                "refId": "B",
+                "expression": "$A > 80",
+                "type": "math",
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            }
+          ]
+        },
+        {
+          "uid": "primary_changed",
+          "title": "Primary Changed",
+          "condition": "B",
+          "for": "5s",
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "annotations": {
+            "summary": "Primary сменился",
+            "description": "Проверить метрики и состояние кластера. Мониторинг не управляет failover.",
+            "resolved": "Истекло 5-минутное окно отслеживания смены Primary"
+          },
+          "labels": {
+            "severity": "info",
+            "service": "mysql-cluster"
+          },
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "prometheus",
+              "relativeTimeRange": {
+                "from": 300,
+                "to": 0
+              },
+              "model": {
+                "refId": "A",
+                "expr": "increase(orchestrator_primary_changes_total[5m])",
+                "instant": true,
+                "range": false,
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "model": {
+                "refId": "B",
+                "expression": "$A > 0",
+                "type": "math",
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            }
+          ]
+        },
+        {
+          "uid": "failover_detected",
+          "title": "Failover Detected",
+          "condition": "B",
+          "for": "5s",
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "annotations": {
+            "summary": "Обнаружено переключение Primary",
+            "description": "Проверить метрики и состояние кластера. Мониторинг не управляет failover.",
+            "resolved": "Истекло 5-минутное окно после failover"
+          },
+          "labels": {
+            "severity": "info",
+            "service": "mysql-cluster"
+          },
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "prometheus",
+              "relativeTimeRange": {
+                "from": 300,
+                "to": 0
+              },
+              "model": {
+                "refId": "A",
+                "expr": "((time() - orchestrator_last_failover_timestamp_seconds) < bool 300) * (orchestrator_last_failover_timestamp_seconds > bool 0)",
+                "instant": true,
+                "range": false,
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "model": {
+                "refId": "B",
+                "expression": "$A > 0",
+                "type": "math",
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            }
+          ]
+        },
+        {
+          "uid": "server_recovered",
+          "title": "Server Recovered",
+          "condition": "B",
+          "for": "5s",
+          "noDataState": "NoData",
+          "execErrState": "Error",
+          "annotations": {
+            "summary": "Сервер восстановился",
+            "description": "Проверить метрики и состояние кластера. Мониторинг не управляет failover.",
+            "resolved": "Восстановление сервера завершено"
+          },
+          "labels": {
+            "severity": "info",
+            "service": "mysql-cluster"
+          },
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "prometheus",
+              "relativeTimeRange": {
+                "from": 300,
+                "to": 0
+              },
+              "model": {
+                "refId": "A",
+                "expr": "(changes(mysql_up[5m]) > bool 0) * (mysql_up == bool 1)",
+                "instant": true,
+                "range": false,
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "model": {
+                "refId": "B",
+                "expression": "$A > 0",
+                "type": "math",
+                "datasource": {
+                  "type": "__expr__",
+                  "uid": "__expr__"
+                },
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

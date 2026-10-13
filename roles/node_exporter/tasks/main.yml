@@ -1,0 +1,17 @@
+---
+- name: Создать каталог Node Exporter
+  ansible.builtin.file:
+    path: "{{ monitoring_root }}/{{ 'agent' if inventory_hostname in groups['monitoring'] else 'db-exporters' }}"
+    state: directory
+    mode: '0750'
+- name: Разместить отдельный Compose Node Exporter
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ monitoring_root }}/{{ 'agent' if inventory_hostname in groups['monitoring'] else 'db-exporters' }}/node-exporter.yml"
+    mode: '0640'
+- name: Запустить Node Exporter
+  ansible.builtin.command:
+    cmd: "docker compose -p {{ 'monitoring' if inventory_hostname in groups['monitoring'] else 'monitoring-exporters' }} -f node-exporter.yml up -d --no-deps node-exporter"
+    chdir: "{{ monitoring_root }}/{{ 'agent' if inventory_hostname in groups['monitoring'] else 'db-exporters' }}"
+  register: node_compose
+  changed_when: "'Created' in node_compose.stderr or 'Recreated' in node_compose.stderr or 'Started' in node_compose.stderr"

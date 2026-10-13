@@ -1,0 +1,99 @@
+---
+- name: Проверить обязательные секреты
+  ansible.builtin.assert:
+    that:
+      - vault_mysql_exporter_user is defined
+      - vault_mysql_exporter_password is defined
+      - vault_grafana_admin_user is defined
+      - vault_grafana_admin_password is defined
+      - vault_mysql_exporter_password | default('CHANGE_ME') != 'CHANGE_ME'
+      - vault_grafana_admin_password | default('CHANGE_ME') != 'CHANGE_ME'
+    fail_msg: "Создайте inventory/group_vars/vault.yml из vault.example.yml и зашифруйте его Ansible Vault. SQL-пользователя создайте вручную по README."
+- name: Проверить Docker CLI
+  ansible.builtin.command: docker version --format '{{ '{{' }}.Server.Version{{ '}}' }}'
+  register: docker_version
+  changed_when: false
+- name: Проверить Docker Compose plugin
+  ansible.builtin.command: docker compose version --short
+  register: compose_version
+  changed_when: false
+- name: Проверить поддержку Python и адреса
+  ansible.builtin.assert:
+    that:
+      - ansible_host is defined
+      - monitoring_trusted_cidr | length > 0
+      - orchestrator_api_urls | length > 0
+- name: Обнаружить MySQL без изменений контейнеров
+  ansible.builtin.script: files/discover_mysql.py
+  environment:
+    MYSQL_CONTAINER_OVERRIDE: "{{ mysql_container_override }}"
+    MYSQL_NETWORK_OVERRIDE: "{{ mysql_network_override }}"
+    MYSQL_PORT: "{{ mysql_port | string }}"
+    MYSQL_HOST_IP: "{{ ansible_host }}"
+  register: mysql_discovery_raw
+  changed_when: false
+  failed_when: false
+  when: inventory_hostname in groups['mysql_nodes']
+- name: Остановиться при неоднозначном обнаружении MySQL
+  ansible.builtin.assert:
+    that:
+      - mysql_discovery_raw.rc == 0
+    fail_msg: "{{ mysql_discovery_raw.stdout | default('Docker discovery failed') }}"
+  when: inventory_hostname in groups['mysql_nodes']
+- name: Сохранить найденное подключение
+  ansible.builtin.set_fact:
+    mysql_discovery: "{{ mysql_discovery_raw.stdout | from_json }}"
+  when: inventory_hostname in groups['mysql_nodes']
+- name: Проверить существующую Docker network
+  ansible.builtin.command: "docker network inspect {{ mysql_discovery.network }}"
+  changed_when: false
+  when:
+    - inventory_hostname in groups['mysql_nodes']
+    - mysql_discovery.network != 'host'
+- name: Проверить доступность существующего MySQL по TCP
+  ansible.builtin.wait_for:
+    host: "{{ mysql_discovery.mysql_host if mysql_discovery.network == 'host' else mysql_discovery.network_ip }}"
+    port: "{{ mysql_discovery.port }}"
+    timeout: 3
+    state: started
+  when: inventory_hostname in groups['mysql_nodes']
+- name: Проверить совместимость API каждого Orchestrator
+  ansible.builtin.uri:
+    url: "{{ item | regex_replace('/+$', '') }}/api/masters"
+    method: GET
+    return_content: true
+    status_code: [200]
+    user: "{{ vault_orchestrator_api_user | default('') }}"
+    password: "{{ vault_orchestrator_api_password | default('') }}"
+    force_basic_auth: "{{ vault_orchestrator_api_user | default('') | length > 0 }}"
+    timeout: "{{ orchestrator_api_timeout }}"
+  loop: "{{ orchestrator_api_urls }}"
+  register: orchestrator_probes
+  failed_when: false
+  no_log: true
+  when: inventory_hostname in groups['monitoring']
+- name: Показать безопасную диагностику доступности API Orchestrator
+  ansible.builtin.debug:
+    msg: >-
+      {% set code = item.status | default(-1) | int %}
+      {% set detail = item.msg | default('') | lower %}
+      API #{{ api_index + 1 }}: HTTP {{ code }};
+      {% if code == 200 and item.json is defined and item.json is sequence and item.json is not mapping %}доступен
+      {% elif code == 200 %}ответ не является JSON-массивом Orchestrator
+      {% elif code in [401, 403] %}проверьте API credentials в Vault
+      {% elif code == 404 %}путь /api/masters отсутствует
+      {% elif 'timed out' in detail or 'timeout' in detail %}таймаут; проверьте сетевой доступ с Agent
+      {% elif 'connection refused' in detail %}соединение отклонено; проверьте адрес и порт
+      {% else %}проверьте API, адрес, порт и сетевую политику
+      {% endif %}
+  loop: "{{ orchestrator_probes.results }}"
+  loop_control:
+    index_var: api_index
+    label: "API #{{ api_index + 1 }}"
+  when: inventory_hostname in groups['monitoring']
+- name: Требовать хотя бы один отвечающий Orchestrator API
+  ansible.builtin.assert:
+    that:
+      - orchestrator_probes.results | selectattr('status', 'defined') | selectattr('status', 'equalto', 200) | selectattr('json', 'defined') | selectattr('json', 'sequence') | list | length > 0
+    fail_msg: "Ни один Orchestrator API не предоставил /api/masters HTTP 200. Смотрите коды выше. Для HTTP 401/403 добавьте vault_orchestrator_api_user и vault_orchestrator_api_password; для таймаута проверьте доступ Agent 10.100.0.4 к TCP 3000 без изменения Orchestrator."
+  when: inventory_hostname in groups['monitoring']

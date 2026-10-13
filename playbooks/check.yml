@@ -1,0 +1,8 @@
+---
+- name: Проверить установленный мониторинг без изменений
+  hosts: monitoring
+  gather_facts: false
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  roles:
+    - validation

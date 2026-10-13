@@ -1,0 +1,11 @@
+{
+  "urls": {{ orchestrator_api_urls | to_json }},
+  "mysql_hosts": {{ ((groups['mysql_nodes'] | map('extract', hostvars, 'ansible_host') | list) + groups['mysql_nodes']) | to_json }},
+  "host_names": { {% for host in groups['mysql_nodes'] %}"{{ hostvars[host].ansible_host }}": "{{ host }}", "{{ host }}": "{{ host }}"{{ ',' if not loop.last else '' }}{% endfor %} },
+  "cluster_hint": {{ orchestrator_cluster_hint | to_json }},
+  "timeout": {{ orchestrator_api_timeout }},
+  "bind": {{ monitoring_bind_address | to_json }},
+  "port": {{ orchestrator_exporter_port }},
+  "username": {{ vault_orchestrator_api_user | default('') | to_json }},
+  "password": {{ vault_orchestrator_api_password | default('') | to_json }}
+}

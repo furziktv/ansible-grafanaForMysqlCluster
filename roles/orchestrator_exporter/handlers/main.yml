@@ -1,0 +1,4 @@
+---
+- name: Restart monitoring Orchestrator Exporter
+  ansible.builtin.command: docker restart monitoring-orchestrator-exporter
+  changed_when: true

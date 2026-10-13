@@ -1,0 +1,4 @@
+---
+- name: Restart monitoring Prometheus
+  ansible.builtin.command: docker restart monitoring-prometheus
+  changed_when: true

@@ -1,0 +1,87 @@
+---
+# Не меняет Grafana и MySQL; отправляет одно тихое тестовое сообщение в Telegram.
+- name: Получить пароль sudo Agent
+  hosts: monitoring
+  gather_facts: false
+  become: false
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  roles:
+    - agent_privilege
+
+- name: Диагностировать доставку Telegram через VLESS
+  hosts: monitoring
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  tasks:
+    - name: Проверить наличие параметров Telegram
+      ansible.builtin.assert:
+        that:
+          - telegram_enabled | bool
+          - telegram_vless_enabled | bool
+          - vault_telegram_bot_token | default('') | length > 0
+          - vault_telegram_chat_id | default('') | length > 0
+        fail_msg: 'Проверьте параметры Telegram в зашифрованном Vault.'
+
+    - name: Проверить существующую integration Grafana
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ grafana_port }}/api/v1/provisioning/contact-points"
+        user: "{{ vault_grafana_admin_user }}"
+        password: "{{ vault_grafana_admin_password }}"
+        force_basic_auth: true
+        return_content: true
+      register: telegram_diagnostic_contacts
+      changed_when: false
+      no_log: true
+
+    - name: Подтвердить одну integration с ожидаемым Chat ID
+      ansible.builtin.assert:
+        that:
+          - >-
+            telegram_diagnostic_contacts.json |
+            selectattr('uid', 'equalto', 'mysql_cluster_telegram') |
+            list | length == 1
+          - >-
+            (telegram_diagnostic_contacts.json |
+            selectattr('uid', 'equalto', 'mysql_cluster_telegram') |
+            first).settings.chatid | string == vault_telegram_chat_id | string
+        fail_msg: >-
+          Contact point отсутствует или его Chat ID не совпадает с Vault.
+          Проверьте vault_telegram_chat_id и примените playbooks/notifications.yml.
+
+    - name: Проверить бота, чат и отправить одно тихое сообщение через прокси
+      ansible.builtin.command:
+        argv:
+          - docker
+          - run
+          - --rm
+          - -i
+          - --network
+          - monitoring_default
+          - -e
+          - HTTPS_PROXY=http://telegram-vless:18080
+          - "{{ monitoring_images.python }}"
+          - python3
+          - -c
+          - "{{ lookup('file', playbook_dir + '/../scripts/telegram_probe.py') }}"
+        stdin: "{{ {'token': vault_telegram_bot_token, 'chat_id': vault_telegram_chat_id} | to_json }}"
+        stdin_add_newline: false
+      register: telegram_diagnostic_probe
+      changed_when: false
+      no_log: true
+
+    - name: Показать безопасный результат диагностики
+      ansible.builtin.debug:
+        var: telegram_diagnostic_probe.stdout
+
+    - name: Подтвердить тестовую доставку
+      ansible.builtin.assert:
+        that:
+          - (telegram_diagnostic_probe.stdout | from_json).getMe.ok | default(false)
+          - (telegram_diagnostic_probe.stdout | from_json).sendMessage.ok | default(false)
+        fail_msg: >-
+          Telegram не принял тестовое сообщение. Причина указана выше без токена.
+          Исправьте bot token или Chat ID в Vault либо доступ бота к чату;
+          затем повторите диагностику.

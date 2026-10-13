@@ -1,0 +1,56 @@
+---
+# Только чтение Grafana API; секреты receiver не выводятся.
+- name: Проверить фактическую маршрутизацию уведомлений Grafana
+  hosts: monitoring
+  gather_facts: false
+  become: false
+  vars_files:
+    - ../inventory/group_vars/vault.yml
+  tasks:
+    - name: Получить contact points без вывода настроек и токенов
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ grafana_port }}/api/v1/provisioning/contact-points"
+        user: "{{ vault_grafana_admin_user }}"
+        password: "{{ vault_grafana_admin_password }}"
+        force_basic_auth: true
+        return_content: true
+      register: audit_contacts
+      changed_when: false
+      no_log: true
+    - name: Получить дерево notification policies
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ grafana_port }}/api/v1/provisioning/policies"
+        user: "{{ vault_grafana_admin_user }}"
+        password: "{{ vault_grafana_admin_password }}"
+        force_basic_auth: true
+        return_content: true
+      register: audit_policies
+      changed_when: false
+      no_log: true
+    - name: Получить правила для проверки прямых receiver
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ grafana_port }}/api/v1/provisioning/alert-rules"
+        user: "{{ vault_grafana_admin_user }}"
+        password: "{{ vault_grafana_admin_password }}"
+        force_basic_auth: true
+        return_content: true
+      register: audit_rules
+      changed_when: false
+      no_log: true
+    - name: Показать только безопасные атрибуты Telegram integrations
+      ansible.builtin.debug:
+        msg:
+          name: "{{ item.name }}"
+          uid: "{{ item.uid }}"
+          type: "{{ item.type }}"
+          custom_message: "{{ item.settings.message | default('') | length > 0 }}"
+      loop: "{{ audit_contacts.json | selectattr('type', 'equalto', 'telegram') | list }}"
+      loop_control:
+        label: "{{ item.name }}/{{ item.uid }}"
+    - name: Показать receiver корневой политики и прямых дочерних маршрутов
+      ansible.builtin.debug:
+        msg:
+          default_receiver: "{{ audit_policies.json.receiver | default('не указан') }}"
+          child_receivers: "{{ audit_policies.json.routes | default([]) | map(attribute='receiver') | list }}"
+          telegram_integrations: "{{ audit_contacts.json | selectattr('type', 'equalto', 'telegram') | list | length }}"
+          direct_receivers: "{{ audit_rules.json | selectattr('notification_settings', 'defined') | map(attribute='notification_settings') | selectattr('receiver', 'defined') | map(attribute='receiver') | list }}"

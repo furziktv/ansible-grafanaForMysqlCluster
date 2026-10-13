@@ -1,0 +1,9 @@
+services:
+  telegram-vless:
+    image: {{ monitoring_images.xray }}
+    container_name: monitoring-telegram-vless
+    restart: unless-stopped
+    command: ["run", "-c", "/etc/xray/config.json"]
+    volumes:
+      - ./telegram-vless/config.json:/etc/xray/config.json:ro
+    networks: [default]

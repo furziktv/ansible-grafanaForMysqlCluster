@@ -1,0 +1,31 @@
+---
+- name: Создать каталог Orchestrator Exporter
+  ansible.builtin.file:
+    path: "{{ monitoring_root }}/agent/orchestrator-exporter"
+    state: directory
+    mode: '0750'
+- name: Разместить read-only API exporter
+  ansible.builtin.copy:
+    src: exporter.py
+    dest: "{{ monitoring_root }}/agent/orchestrator-exporter/exporter.py"
+    mode: '0644'
+  notify: Restart monitoring Orchestrator Exporter
+- name: Разместить конфигурацию Orchestrator API
+  ansible.builtin.template:
+    src: config.json.j2
+    dest: "{{ monitoring_root }}/agent/orchestrator-exporter/config.json"
+    mode: '0600'
+  no_log: true
+  notify: Restart monitoring Orchestrator Exporter
+- name: Разместить Compose Orchestrator Exporter
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ monitoring_root }}/agent/orchestrator-exporter.yml"
+    mode: '0640'
+  notify: Restart monitoring Orchestrator Exporter
+- name: Запустить Orchestrator Exporter
+  ansible.builtin.command:
+    cmd: docker compose -p monitoring -f orchestrator-exporter.yml up -d --no-deps orchestrator-exporter
+    chdir: "{{ monitoring_root }}/agent"
+  register: orchestrator_compose
+  changed_when: "'Created' in orchestrator_compose.stderr or 'Recreated' in orchestrator_compose.stderr or 'Started' in orchestrator_compose.stderr"

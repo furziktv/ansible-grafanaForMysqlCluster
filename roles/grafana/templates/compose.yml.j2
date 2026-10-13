@@ -1,0 +1,24 @@
+services:
+  grafana:
+    image: {{ monitoring_images.grafana }}
+    container_name: monitoring-grafana
+    restart: unless-stopped
+    ports:
+      - "{{ monitoring_bind_address }}:{{ grafana_port }}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: {{ vault_grafana_admin_user | to_json }}
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana-admin-password
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
+      GF_SECURITY_COOKIE_SECURE: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+{% if telegram_vless_enabled %}
+      HTTPS_PROXY: http://telegram-vless:18080
+      NO_PROXY: prometheus,localhost,127.0.0.1,10.100.0.0/24
+{% endif %}
+    volumes:
+      - ./grafana/data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./grafana/admin-password:/run/secrets/grafana-admin-password:ro
+    networks: [default]
